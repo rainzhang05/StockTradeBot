@@ -4,7 +4,8 @@ import os
 
 from stocktradebot.config import AppConfig
 from stocktradebot.data.providers.alpha_vantage import AlphaVantageDailyHistoryProvider
-from stocktradebot.data.providers.base import DailyHistoryProvider
+from stocktradebot.data.providers.base import DailyHistoryProvider, FundamentalsProvider
+from stocktradebot.data.providers.sec import SecCompanyFactsProvider
 from stocktradebot.data.providers.stooq import StooqDailyHistoryProvider
 
 
@@ -33,3 +34,18 @@ def build_provider_registry(config: AppConfig) -> dict[str, DailyHistoryProvider
         )
 
     return registry
+
+
+def build_fundamentals_provider(config: AppConfig) -> FundamentalsProvider | None:
+    provider_config = config.fundamentals_provider
+    user_agent = provider_config.resolved_user_agent()
+    if not provider_config.enabled or user_agent is None:
+        return None
+
+    return SecCompanyFactsProvider(
+        base_url=provider_config.base_url,
+        ticker_mapping_url=provider_config.ticker_mapping_url,
+        timeout_seconds=provider_config.timeout_seconds,
+        user_agent=user_agent,
+        symbol_to_cik=provider_config.symbol_to_cik,
+    )
