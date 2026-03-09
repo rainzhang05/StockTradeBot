@@ -30,6 +30,7 @@ from stocktradebot.execution import (
 from stocktradebot.features import build_dataset_snapshot, dataset_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
 from stocktradebot.models import backtest_model, model_status, train_model
+from stocktradebot.observability import read_operational_events, record_operational_event
 from stocktradebot.runtime import build_ui_url, collect_doctor_checks, runtime_status
 from stocktradebot.storage import (
     AuditEvent,
@@ -78,6 +79,16 @@ def create_app(
     app.state.config = app_config
     app.state.runtime_host = runtime_host or app_config.api_host
     app.state.runtime_port = runtime_port or app_config.api_port
+
+    record_operational_event(
+        app_config,
+        category="api",
+        message="api app created",
+        details={
+            "runtime_host": app.state.runtime_host,
+            "runtime_port": app.state.runtime_port,
+        },
+    )
 
     frontend_dist = find_frontend_dist()
     assets_path = frontend_dist / "assets" if frontend_dist else None
@@ -132,12 +143,22 @@ def create_app(
     def system_audit(limit: int = 25) -> dict[str, object]:
         return {"items": _serialize_audit_events(current_config(), limit=limit)}
 
+    @app.get("/api/v1/system/logs")
+    def system_logs(limit: int = 50) -> dict[str, object]:
+        return {"items": read_operational_events(current_config(), limit=limit)}
+
     @app.put("/api/v1/config")
     def update_config(payload: dict[str, Any]) -> dict[str, object]:
         try:
             updated = apply_config_patch(current_config(), payload)
             initialize_database(updated)
             record_audit_event(updated, "config", "config updated via API")
+            record_operational_event(
+                updated,
+                category="api:config",
+                message="config updated via API",
+                details={"keys": sorted(payload.keys())},
+            )
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except (TypeError, ValueError, RuntimeError) as exc:
@@ -184,6 +205,12 @@ def create_app(
                 raise HTTPException(status_code=400, detail="Unsupported target mode.")
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:mode",
+            message="mode transition requested via API",
+            details={"target_mode": target_mode, "status": summary.status},
+        )
         return {"mode_transition": asdict(summary)}
 
     @app.get("/api/v1/operator/workspace")
@@ -196,6 +223,7 @@ def create_app(
             "system": {
                 "status": runtime_status(config.app_home),
                 "audit_events": _serialize_audit_events(config, limit=25),
+                "logs": read_operational_events(config, limit=25),
             },
             "broker": broker_state(),
             "market_data": market_data_job_status(),
@@ -254,6 +282,12 @@ def create_app(
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:market-data",
+            message="market-data backfill completed via API",
+            details={"run_id": summary.run_id, "canonical_count": summary.canonical_count},
+        )
         return {"backfill_run": asdict(summary)}
 
     @app.get("/api/v1/models/datasets/latest")
@@ -338,6 +372,12 @@ def create_app(
             summary = build_dataset_snapshot(config, as_of_date=parsed_date)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:dataset",
+            message="dataset snapshot built via API",
+            details={"snapshot_id": summary.snapshot_id, "row_count": summary.row_count},
+        )
         return {"snapshot": asdict(summary)}
 
     @app.post("/api/v1/models/train")
@@ -351,6 +391,12 @@ def create_app(
             summary = train_model(config, as_of_date=parsed_date)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:train",
+            message="training run completed via API",
+            details={"run_id": summary.run_id, "model_version": summary.model_version},
+        )
         return {"training_run": asdict(summary)}
 
     @app.post("/api/v1/models/backtests/run")
@@ -360,6 +406,12 @@ def create_app(
             summary = backtest_model(config, model_version=model_version)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:backtest",
+            message="backtest run completed via API",
+            details={"run_id": summary.run_id, "model_version": summary.model_version},
+        )
         return {"backtest_run": asdict(summary)}
 
     @app.post("/api/v1/portfolio/simulations/run")
@@ -380,6 +432,12 @@ def create_app(
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:simulation",
+            message="simulation run completed via API",
+            details={"run_id": summary.run_id, "mode": summary.mode},
+        )
         return {"simulation_run": asdict(summary)}
 
     @app.post("/api/v1/paper/run")
@@ -400,6 +458,12 @@ def create_app(
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:paper",
+            message="paper run completed via API",
+            details={"run_id": summary.run_id, "mode": summary.mode},
+        )
         return {"paper_run": asdict(summary)}
 
     @app.post("/api/v1/live/arm")
@@ -418,6 +482,12 @@ def create_app(
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:live",
+            message="live mode arm completed via API",
+            details={"current_mode": summary.current_mode, "status": summary.status},
+        )
         return {"mode_transition": asdict(summary)}
 
     @app.post("/api/v1/live/run")
@@ -443,11 +513,26 @@ def create_app(
                     model_version=model_version,
                     ack_disable_approvals=ack_disable_approvals,
                 )
+                record_operational_event(
+                    config,
+                    category="api:live",
+                    message="live-autonomous run completed via API",
+                    details={"run_id": run_summary.run_id, "status": run_summary.status},
+                )
                 return {"live_run": asdict(run_summary)}
             preparation_summary = prepare_live_trading_day(
                 config,
                 as_of_date=parsed_date,
                 model_version=model_version,
+            )
+            record_operational_event(
+                config,
+                category="api:live",
+                message="live-manual preparation completed via API",
+                details={
+                    "run_id": preparation_summary.run_id,
+                    "status": preparation_summary.status,
+                },
             )
             return {"live_preparation": asdict(preparation_summary)}
         except RuntimeError as exc:
@@ -471,6 +556,12 @@ def create_app(
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:live",
+            message="live approvals processed via API",
+            details={"run_id": summary.run_id, "status": summary.status},
+        )
         return {"approval_result": asdict(summary)}
 
     @app.get("/", response_class=HTMLResponse, response_model=None)
