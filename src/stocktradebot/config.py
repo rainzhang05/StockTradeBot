@@ -13,6 +13,7 @@ DEFAULT_STOOQ_BASE_URL = "https://stooq.com"
 DEFAULT_ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co"
 DEFAULT_SEC_COMPANY_FACTS_BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
 DEFAULT_SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+DEFAULT_IBKR_GATEWAY_BASE_URL = "https://127.0.0.1:5000/v1/api"
 
 
 def resolve_app_home(app_home: Path | None = None) -> Path:
@@ -518,6 +519,115 @@ class ExecutionConfig:
 
 
 @dataclass(slots=True)
+class BrokerGatewayConfig:
+    base_url: str = DEFAULT_IBKR_GATEWAY_BASE_URL
+    timeout_seconds: float = 15.0
+    verify_tls: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> BrokerGatewayConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        return cls(
+            base_url=str(data.get("base_url", defaults.base_url)),
+            timeout_seconds=float(data.get("timeout_seconds", defaults.timeout_seconds)),
+            verify_tls=bool(data.get("verify_tls", defaults.verify_tls)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "base_url": self.base_url,
+            "timeout_seconds": self.timeout_seconds,
+            "verify_tls": self.verify_tls,
+        }
+
+
+@dataclass(slots=True)
+class BrokerConfig:
+    enabled: bool = False
+    provider: str = "ibkr-client-portal"
+    operator_name: str = "local-operator"
+    default_exchange: str = "SMART"
+    default_currency: str = "USD"
+    paper_account_id: str | None = None
+    live_account_id: str | None = None
+    gateway: BrokerGatewayConfig = field(default_factory=BrokerGatewayConfig)
+    live_manual_min_paper_days: int = 30
+    live_autonomous_min_safe_days: int = 60
+    max_open_incidents_for_autonomous: int = 0
+    require_live_autonomous_ack: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> BrokerConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        paper_account_id = data.get("paper_account_id", defaults.paper_account_id)
+        live_account_id = data.get("live_account_id", defaults.live_account_id)
+        return cls(
+            enabled=bool(data.get("enabled", defaults.enabled)),
+            provider=str(data.get("provider", defaults.provider)),
+            operator_name=str(data.get("operator_name", defaults.operator_name)),
+            default_exchange=str(data.get("default_exchange", defaults.default_exchange)),
+            default_currency=str(data.get("default_currency", defaults.default_currency)),
+            paper_account_id=(
+                None if paper_account_id is None else str(paper_account_id).strip() or None
+            ),
+            live_account_id=None
+            if live_account_id is None
+            else str(live_account_id).strip() or None,
+            gateway=BrokerGatewayConfig.from_dict(data.get("gateway")),
+            live_manual_min_paper_days=int(
+                data.get("live_manual_min_paper_days", defaults.live_manual_min_paper_days)
+            ),
+            live_autonomous_min_safe_days=int(
+                data.get(
+                    "live_autonomous_min_safe_days",
+                    defaults.live_autonomous_min_safe_days,
+                )
+            ),
+            max_open_incidents_for_autonomous=int(
+                data.get(
+                    "max_open_incidents_for_autonomous",
+                    defaults.max_open_incidents_for_autonomous,
+                )
+            ),
+            require_live_autonomous_ack=bool(
+                data.get(
+                    "require_live_autonomous_ack",
+                    defaults.require_live_autonomous_ack,
+                )
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "provider": self.provider,
+            "operator_name": self.operator_name,
+            "default_exchange": self.default_exchange,
+            "default_currency": self.default_currency,
+            "paper_account_id": self.paper_account_id,
+            "live_account_id": self.live_account_id,
+            "gateway": self.gateway.to_dict(),
+            "live_manual_min_paper_days": self.live_manual_min_paper_days,
+            "live_autonomous_min_safe_days": self.live_autonomous_min_safe_days,
+            "max_open_incidents_for_autonomous": self.max_open_incidents_for_autonomous,
+            "require_live_autonomous_ack": self.require_live_autonomous_ack,
+        }
+
+    def account_id_for_mode(self, mode: str) -> str | None:
+        if mode == "paper":
+            return self.paper_account_id
+        if mode in {"live-manual", "live-autonomous"}:
+            return self.live_account_id
+        return None
+
+
+@dataclass(slots=True)
 class AppConfig:
     app_home: Path
     config_path: Path
@@ -537,6 +647,7 @@ class AppConfig:
     portfolio: PortfolioConfig = field(default_factory=PortfolioConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    broker: BrokerConfig = field(default_factory=BrokerConfig)
 
     @classmethod
     def default(cls, app_home: Path | None = None) -> AppConfig:
@@ -573,6 +684,7 @@ class AppConfig:
             portfolio=PortfolioConfig.from_dict(data.get("portfolio")),
             risk=RiskConfig.from_dict(data.get("risk")),
             execution=ExecutionConfig.from_dict(data.get("execution")),
+            broker=BrokerConfig.from_dict(data.get("broker")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -591,6 +703,7 @@ class AppConfig:
             "portfolio": self.portfolio.to_dict(),
             "risk": self.risk.to_dict(),
             "execution": self.execution.to_dict(),
+            "broker": self.broker.to_dict(),
         }
 
     def database_url(self) -> str:
