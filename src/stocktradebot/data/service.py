@@ -10,19 +10,27 @@ from sqlalchemy.orm import Session
 
 from stocktradebot.config import AppConfig
 from stocktradebot.data.canonicalize import canonicalize_daily_bars
+from stocktradebot.data.canonicalize_intraday import canonicalize_intraday_bars
 from stocktradebot.data.fundamentals import backfill_fundamentals
 from stocktradebot.data.models import (
     BackfillSummary,
     CanonicalBarRecord,
     DailyBarRecord,
     DataQualityIncidentRecord,
+    IntradayBarRecord,
+    IntradayCanonicalBarRecord,
     ProviderHistoryPayload,
     UniverseSnapshotRecord,
 )
-from stocktradebot.data.providers import build_fundamentals_provider, build_provider_registry
+from stocktradebot.data.providers import (
+    build_fundamentals_provider,
+    build_intraday_provider_registry,
+    build_provider_registry,
+)
 from stocktradebot.data.providers.base import (
     DailyHistoryProvider,
     FundamentalsProvider,
+    IntradayHistoryProvider,
     ProviderError,
 )
 from stocktradebot.data.raw import persist_raw_payload
@@ -34,10 +42,12 @@ from stocktradebot.data.universe import (
 from stocktradebot.storage import (
     BackfillRun,
     CanonicalDailyBar,
+    CanonicalIntradayBar,
     CorporateActionObservation,
     DailyBarObservation,
     DataQualityIncident,
     FundamentalObservation,
+    IntradayBarObservation,
     ProviderPayload,
     UniverseSnapshot,
     UniverseSnapshotMember,
@@ -94,6 +104,32 @@ def _resolve_provider_list(
     return tuple(selected_providers), primary_name, resolved_secondary_name
 
 
+def _resolve_intraday_provider_list(
+    config: AppConfig,
+    *,
+    providers: Sequence[IntradayHistoryProvider] | None,
+    primary_provider: str | None,
+    secondary_provider: str | None,
+) -> tuple[tuple[IntradayHistoryProvider, ...], str, str | None]:
+    if providers is not None:
+        provider_map = {provider.name: provider for provider in providers}
+    else:
+        provider_map = build_intraday_provider_registry(config)
+
+    primary_name = primary_provider or config.intraday_research.primary_provider
+    secondary_name = secondary_provider or config.intraday_research.secondary_provider
+    if primary_name not in provider_map:
+        raise RuntimeError(f"Primary intraday provider '{primary_name}' is not available.")
+
+    selected_providers = [provider_map[primary_name]]
+    resolved_secondary_name: str | None = None
+    if secondary_name and secondary_name != primary_name and secondary_name in provider_map:
+        selected_providers.append(provider_map[secondary_name])
+        resolved_secondary_name = secondary_name
+
+    return tuple(selected_providers), primary_name, resolved_secondary_name
+
+
 def _store_payload(
     session: Session,
     config: AppConfig,
@@ -109,7 +145,7 @@ def _store_payload(
         payload_path=stored_payload.relative_path,
         checksum_sha256=stored_payload.checksum_sha256,
         byte_count=stored_payload.byte_count,
-        row_count=len(payload.bars) + len(payload.corporate_actions),
+        row_count=len(payload.bars) + len(payload.intraday_bars) + len(payload.corporate_actions),
         requested_at=payload.requested_at,
     )
     session.add(payload_row)
@@ -128,6 +164,34 @@ def _store_payload(
                 volume=bar.volume,
                 currency=bar.currency,
                 split_adjusted=bar.split_adjusted,
+                payload_id=payload_row.id,
+                observed_at=payload.requested_at,
+            )
+        )
+
+    for intraday_bar in payload.intraday_bars:
+        session.execute(
+            delete(IntradayBarObservation).where(
+                IntradayBarObservation.provider == intraday_bar.provider,
+                IntradayBarObservation.symbol == intraday_bar.symbol,
+                IntradayBarObservation.frequency == intraday_bar.frequency,
+                IntradayBarObservation.bar_start == intraday_bar.bar_start,
+            )
+        )
+        session.add(
+            IntradayBarObservation(
+                provider=intraday_bar.provider,
+                symbol=intraday_bar.symbol,
+                frequency=intraday_bar.frequency,
+                bar_start=intraday_bar.bar_start,
+                session_date=intraday_bar.trade_date,
+                open=intraday_bar.open,
+                high=intraday_bar.high,
+                low=intraday_bar.low,
+                close=intraday_bar.close,
+                volume=intraday_bar.volume,
+                currency=intraday_bar.currency,
+                split_adjusted=intraday_bar.split_adjusted,
                 payload_id=payload_row.id,
                 observed_at=payload.requested_at,
             )
@@ -250,6 +314,148 @@ def _replace_canonical_rows(
         )
 
 
+def _load_intraday_observations(
+    session: Session,
+    *,
+    symbols: tuple[str, ...],
+    provider_names: tuple[str, ...],
+    frequency: str,
+    start_date: date,
+    end_date: date,
+) -> list[IntradayBarRecord]:
+    rows = session.scalars(
+        select(IntradayBarObservation).where(
+            IntradayBarObservation.symbol.in_(symbols),
+            IntradayBarObservation.provider.in_(provider_names),
+            IntradayBarObservation.frequency == frequency,
+            IntradayBarObservation.session_date >= start_date,
+            IntradayBarObservation.session_date <= end_date,
+        )
+    ).all()
+    return [
+        IntradayBarRecord(
+            provider=row.provider,
+            symbol=row.symbol,
+            frequency=row.frequency,
+            bar_start=row.bar_start,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            volume=row.volume,
+            currency=row.currency,
+            split_adjusted=row.split_adjusted,
+        )
+        for row in rows
+    ]
+
+
+def _replace_canonical_intraday_rows(
+    session: Session,
+    *,
+    symbols: tuple[str, ...],
+    frequency: str,
+    start_date: date,
+    end_date: date,
+    canonical_bars: Sequence[IntradayCanonicalBarRecord],
+    incidents: Sequence[DataQualityIncidentRecord],
+) -> None:
+    session.execute(
+        delete(CanonicalIntradayBar).where(
+            CanonicalIntradayBar.symbol.in_(symbols),
+            CanonicalIntradayBar.frequency == frequency,
+            CanonicalIntradayBar.session_date >= start_date,
+            CanonicalIntradayBar.session_date <= end_date,
+        )
+    )
+    session.execute(
+        delete(DataQualityIncident).where(
+            DataQualityIncident.symbol.in_(symbols),
+            DataQualityIncident.trade_date >= start_date,
+            DataQualityIncident.trade_date <= end_date,
+            DataQualityIncident.domain == f"intraday_prices:{frequency}",
+        )
+    )
+
+    for bar in canonical_bars:
+        session.add(
+            CanonicalIntradayBar(
+                symbol=bar.symbol,
+                frequency=bar.frequency,
+                bar_start=bar.bar_start,
+                session_date=bar.trade_date,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                validation_tier=bar.validation_tier,
+                primary_provider=bar.primary_provider,
+                confirming_provider=bar.confirming_provider,
+                field_provenance=json.dumps(bar.field_provenance, sort_keys=True),
+            )
+        )
+
+    for incident in incidents:
+        session.add(
+            DataQualityIncident(
+                symbol=incident.symbol,
+                trade_date=incident.trade_date,
+                domain=incident.domain,
+                affected_fields=json.dumps(incident.affected_fields),
+                involved_providers=json.dumps(incident.involved_providers),
+                observed_values=json.dumps(incident.observed_values, sort_keys=True),
+                resolution_status=incident.resolution_status,
+                operator_notes=incident.operator_notes,
+            )
+        )
+
+
+def _write_intraday_quality_report(
+    config: AppConfig,
+    *,
+    frequency: str,
+    as_of_date: date,
+    canonical_bars: Sequence[IntradayCanonicalBarRecord],
+) -> str:
+    bars_by_session: dict[tuple[str, date], list[IntradayCanonicalBarRecord]] = {}
+    for bar in canonical_bars:
+        bars_by_session.setdefault((bar.symbol, bar.trade_date), []).append(bar)
+
+    sessions: list[dict[str, object]] = []
+    verified_count = 0
+    for (symbol, session_date), rows in sorted(bars_by_session.items()):
+        row_count = len(rows)
+        verified_rows = [row for row in rows if row.validation_tier == "verified"]
+        verified_count += len(verified_rows)
+        sessions.append(
+            {
+                "symbol": symbol,
+                "session_date": session_date.isoformat(),
+                "observed_bars": row_count,
+                "verified_bars": len(verified_rows),
+                "coverage_ratio": 0.0 if row_count == 0 else len(verified_rows) / row_count,
+            }
+        )
+
+    verified_ratio = 0.0 if not canonical_bars else verified_count / len(canonical_bars)
+    report_payload = {
+        "frequency": frequency,
+        "as_of_date": as_of_date.isoformat(),
+        "bar_count": len(canonical_bars),
+        "verified_ratio": verified_ratio,
+        "promotion_ready": verified_ratio >= config.intraday_research.minimum_verified_ratio,
+        "sessions": sessions,
+    }
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    artifact_path = config.report_artifacts_dir / f"intraday-quality-{frequency}-{timestamp}.json"
+    artifact_path.write_text(
+        json.dumps(report_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return str(artifact_path.relative_to(config.app_home))
+
+
 def _store_universe_snapshot(
     session: Session,
     *,
@@ -318,6 +524,8 @@ def backfill_market_data(
                 requested_symbols=json.dumps(selected_symbols),
                 primary_provider=primary_name,
                 secondary_provider=secondary_name,
+                domain="daily",
+                frequency="daily",
                 as_of_date=effective_as_of_date,
                 lookback_days=lookback_days,
                 summary_json="{}",
@@ -434,6 +642,8 @@ def backfill_market_data(
                 universe_snapshot_id=snapshot_id,
                 validation_counts=validation_counts,
                 providers_used=provider_names,
+                domain="daily",
+                frequency="daily",
             )
     except Exception:
         with Session(engine) as session:
@@ -461,7 +671,17 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
     engine = create_db_engine(config)
     try:
         with Session(engine) as session:
-            latest_run = session.scalar(select(BackfillRun).order_by(BackfillRun.id.desc()))
+            latest_run = session.scalar(
+                select(BackfillRun)
+                .where(BackfillRun.domain == "daily")
+                .order_by(BackfillRun.id.desc())
+            )
+            latest_intraday_runs = session.scalars(
+                select(BackfillRun)
+                .where(BackfillRun.domain == "intraday")
+                .order_by(BackfillRun.id.desc())
+                .limit(8)
+            ).all()
             latest_snapshot = session.scalar(
                 select(UniverseSnapshot).order_by(
                     UniverseSnapshot.effective_date.desc(),
@@ -477,6 +697,13 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             fundamentals_count = session.scalar(
                 select(func.count()).select_from(FundamentalObservation)
             )
+            intraday_validation_rows = session.execute(
+                select(
+                    CanonicalIntradayBar.frequency,
+                    CanonicalIntradayBar.validation_tier,
+                    func.count(),
+                ).group_by(CanonicalIntradayBar.frequency, CanonicalIntradayBar.validation_tier)
+            ).all()
             recent_incidents = session.scalars(
                 select(DataQualityIncident)
                 .order_by(DataQualityIncident.created_at.desc(), DataQualityIncident.id.desc())
@@ -486,6 +713,9 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
         engine.dispose()
 
     latest_run_summary = json.loads(latest_run.summary_json) if latest_run is not None else None
+    intraday_counts: dict[str, dict[str, int]] = {}
+    for frequency, tier, count in intraday_validation_rows:
+        intraday_counts.setdefault(frequency, {})[tier] = count
     return {
         "latest_run": (
             {
@@ -516,6 +746,17 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             if latest_snapshot is not None
             else None
         ),
+        "latest_intraday_runs": [
+            {
+                "id": run.id,
+                "status": run.status,
+                "frequency": run.frequency,
+                "as_of_date": run.as_of_date.isoformat(),
+                "summary": json.loads(run.summary_json),
+            }
+            for run in latest_intraday_runs
+        ],
+        "intraday_validation_counts": intraday_counts,
         "validation_counts": {tier: count for tier, count in validation_rows},
         "fundamentals_observation_count": fundamentals_count or 0,
         "recent_incidents": [
@@ -531,3 +772,169 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             for incident in recent_incidents
         ],
     }
+
+
+def backfill_intraday_data(
+    config: AppConfig,
+    *,
+    frequency: str,
+    as_of_date: date | None = None,
+    lookback_days: int = 20,
+    symbols: Sequence[str] | None = None,
+    providers: Sequence[IntradayHistoryProvider] | None = None,
+    primary_provider: str | None = None,
+    secondary_provider: str | None = None,
+) -> BackfillSummary:
+    selected_symbols = (
+        _normalize_symbols(symbols)
+        if symbols is not None and len(symbols) > 0
+        else _default_symbol_set(config)
+    )
+    effective_as_of_date = as_of_date or datetime.now(UTC).date()
+    start_date = effective_as_of_date - timedelta(days=max(lookback_days, 10))
+    start_at = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
+    end_at = datetime.combine(effective_as_of_date, datetime.max.time(), tzinfo=UTC)
+    selected_providers, primary_name, secondary_name = _resolve_intraday_provider_list(
+        config,
+        providers=providers,
+        primary_provider=primary_provider,
+        secondary_provider=secondary_provider,
+    )
+    provider_names = tuple(provider.name for provider in selected_providers)
+
+    engine = create_db_engine(config)
+    try:
+        with Session(engine) as session:
+            run_row = BackfillRun(
+                status="running",
+                requested_symbols=json.dumps(selected_symbols),
+                primary_provider=primary_name,
+                secondary_provider=secondary_name,
+                domain="intraday",
+                frequency=frequency,
+                as_of_date=effective_as_of_date,
+                lookback_days=lookback_days,
+                summary_json="{}",
+            )
+            session.add(run_row)
+            session.commit()
+            run_id = run_row.id
+
+            payload_count = 0
+            observation_count = 0
+            fetch_errors: list[str] = []
+            for symbol in selected_symbols:
+                for provider in selected_providers:
+                    try:
+                        payload = provider.fetch_intraday_history(
+                            symbol,
+                            frequency=frequency,
+                            start_at=start_at,
+                            end_at=end_at,
+                        )
+                    except ProviderError as exc:
+                        fetch_errors.append(f"{provider.name}:{symbol}:{exc}")
+                        record_audit_event(
+                            config,
+                            "market-data",
+                            f"intraday provider fetch failed for {provider.name} {symbol}: {exc}",
+                        )
+                        continue
+                    payload_count += 1
+                    observation_count += _store_payload(session, config, payload)[1]
+                    session.commit()
+
+            observations = _load_intraday_observations(
+                session,
+                symbols=selected_symbols,
+                provider_names=provider_names,
+                frequency=frequency,
+                start_date=start_date,
+                end_date=effective_as_of_date,
+            )
+            canonical_bars, incidents = canonicalize_intraday_bars(
+                observations,
+                config=config,
+                frequency=frequency,
+                primary_provider=primary_name,
+                secondary_provider=secondary_name,
+                thresholds=config.data_providers.validation,
+            )
+            _replace_canonical_intraday_rows(
+                session,
+                symbols=selected_symbols,
+                frequency=frequency,
+                start_date=start_date,
+                end_date=effective_as_of_date,
+                canonical_bars=canonical_bars,
+                incidents=incidents,
+            )
+
+            quality_report_path = _write_intraday_quality_report(
+                config,
+                frequency=frequency,
+                as_of_date=effective_as_of_date,
+                canonical_bars=canonical_bars,
+            )
+            validation_counts = dict(
+                sorted(Counter(bar.validation_tier for bar in canonical_bars).items())
+            )
+            latest_snapshot = session.scalar(
+                select(UniverseSnapshot).order_by(
+                    UniverseSnapshot.effective_date.desc(),
+                    UniverseSnapshot.id.desc(),
+                )
+            )
+            summary_payload = {
+                "payload_count": payload_count,
+                "observation_count": observation_count,
+                "canonical_count": len(canonical_bars),
+                "incident_count": len(incidents),
+                "providers_used": provider_names,
+                "validation_counts": validation_counts,
+                "fetch_errors": fetch_errors,
+                "quality_report_path": quality_report_path,
+            }
+            run_row.status = "completed_with_errors" if fetch_errors else "completed"
+            run_row.summary_json = json.dumps(summary_payload, sort_keys=True)
+            run_row.completed_at = datetime.now(UTC)
+            session.commit()
+
+            record_audit_event(
+                config,
+                "market-data",
+                (
+                    f"intraday backfill run {run_id} completed for {frequency} "
+                    f"with {len(canonical_bars)} canonical bars"
+                ),
+            )
+            return BackfillSummary(
+                run_id=run_id,
+                as_of_date=effective_as_of_date,
+                requested_symbols=selected_symbols,
+                primary_provider=primary_name,
+                secondary_provider=secondary_name,
+                payload_count=payload_count,
+                observation_count=observation_count,
+                fundamentals_payload_count=0,
+                fundamentals_observation_count=0,
+                canonical_count=len(canonical_bars),
+                incident_count=len(incidents),
+                universe_snapshot_id=None if latest_snapshot is None else latest_snapshot.id,
+                validation_counts=validation_counts,
+                providers_used=provider_names,
+                domain="intraday",
+                frequency=frequency,
+                quality_report_path=quality_report_path,
+            )
+    except Exception:
+        with Session(engine) as session:
+            failed_run = session.get(BackfillRun, run_id) if "run_id" in locals() else None
+            if failed_run is not None:
+                failed_run.status = "failed"
+                failed_run.error_message = "intraday backfill aborted unexpectedly"
+                failed_run.completed_at = datetime.now(UTC)
+                session.commit()
+        raise
+    finally:
+        engine.dispose()
