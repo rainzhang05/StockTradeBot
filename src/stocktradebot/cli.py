@@ -12,7 +12,7 @@ import uvicorn
 
 from stocktradebot.api import create_app
 from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, AppConfig, initialize_config
-from stocktradebot.data import backfill_market_data
+from stocktradebot.data import backfill_intraday_data, backfill_market_data
 from stocktradebot.execution import (
     approve_live_trading_run,
     arm_live_mode,
@@ -24,7 +24,13 @@ from stocktradebot.execution import (
     simulate_trading_day,
     simulation_status,
 )
-from stocktradebot.models import backtest_model, model_status, train_model
+from stocktradebot.features import build_intraday_dataset_snapshot
+from stocktradebot.models import (
+    backtest_model,
+    model_status,
+    train_model,
+    validate_intraday_research,
+)
 from stocktradebot.observability import record_operational_event
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
@@ -43,6 +49,7 @@ AsOfOption = Annotated[
     typer.Option(help="Backfill as of this date in YYYY-MM-DD format."),
 ]
 LookbackDaysOption = Annotated[int, typer.Option(min=30)]
+IntradayLookbackDaysOption = Annotated[int, typer.Option(min=1)]
 SymbolsOption = Annotated[
     list[str] | None,
     typer.Option("--symbol", "-s", help="Repeat to backfill specific symbols."),
@@ -84,6 +91,10 @@ AckDisableApprovalsOption = Annotated[
             "per-order approval is disabled."
         )
     ),
+]
+FrequencyOption = Annotated[
+    str,
+    typer.Option("--frequency", help="Intraday research frequency: 15min or 1h."),
 ]
 
 
@@ -218,6 +229,58 @@ def backfill(
         command="backfill",
         message="market-data backfill completed",
         details={"run_id": summary.run_id, "canonical_count": summary.canonical_count},
+    )
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
+
+
+@app.command("intraday-backfill")
+def intraday_backfill(
+    app_home: AppHomeOption = None,
+    frequency: FrequencyOption = "15min",
+    as_of: AsOfOption = None,
+    lookback_days: IntradayLookbackDaysOption = 20,
+    symbol: SymbolsOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    summary = backfill_intraday_data(
+        config,
+        frequency=frequency,
+        as_of_date=_parse_as_of_date(as_of),
+        lookback_days=lookback_days,
+        symbols=symbol,
+    )
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
+
+
+@app.command("intraday-dataset")
+def intraday_dataset(
+    app_home: AppHomeOption = None,
+    frequency: FrequencyOption = "15min",
+    as_of: AsOfOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    summary = build_intraday_dataset_snapshot(
+        config,
+        frequency=frequency,
+        as_of_date=_parse_as_of_date(as_of),
+    )
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
+
+
+@app.command("intraday-validate")
+def intraday_validate(
+    app_home: AppHomeOption = None,
+    frequency: FrequencyOption = "15min",
+    as_of: AsOfOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    summary = validate_intraday_research(
+        config,
+        frequency=frequency,
+        as_of_date=_parse_as_of_date(as_of),
     )
     typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
