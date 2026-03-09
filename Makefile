@@ -1,4 +1,8 @@
-PYTHON ?= python3
+VENV ?= .venv
+PYTHON ?= $(VENV)/bin/python
+RUFF ?= $(VENV)/bin/ruff
+MYPY ?= $(VENV)/bin/mypy
+PYTEST ?= $(VENV)/bin/pytest
 
 .PHONY: install frontend-install fmt lint typecheck test frontend-lint frontend-test frontend-build backend-quality backend-tests frontend-check package-check check
 
@@ -9,16 +13,16 @@ frontend-install:
 	cd frontend && npm install
 
 fmt:
-	ruff format src tests
+	$(RUFF) format src tests alembic/versions
 
 lint:
-	ruff check src tests
+	$(RUFF) check src tests alembic/versions
 
 typecheck:
-	mypy src
+	$(MYPY) src
 
 test:
-	pytest
+	$(PYTEST) tests
 
 frontend-lint:
 	cd frontend && npm run lint
@@ -30,12 +34,12 @@ frontend-build:
 	cd frontend && npm run build
 
 backend-quality:
-	ruff format --check src tests
-	ruff check src tests
-	mypy src
+	$(RUFF) format --check src tests alembic/versions
+	$(RUFF) check src tests alembic/versions
+	$(MYPY) src
 
 backend-tests:
-	pytest
+	$(PYTEST) tests
 
 frontend-check:
 	cd frontend && npm run lint
@@ -43,7 +47,7 @@ frontend-check:
 	cd frontend && npm run build
 
 package-check:
-	python -m build
+	$(PYTHON) -m build
 
 check:
 	$(MAKE) backend-quality
