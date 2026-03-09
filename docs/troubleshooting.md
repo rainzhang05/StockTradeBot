@@ -1,6 +1,6 @@
 # StockTradeBot Troubleshooting
 
-This guide covers the most common local operator failures for the Phase 8 release-ready flow.
+This guide covers the most common local operator failures for the current Phase 9 flow.
 
 ## UI Shows The Placeholder Page
 
@@ -51,6 +51,18 @@ Fix:
 1. run a market-data backfill from the `Data` screen or CLI
 2. confirm `Data` now shows a latest universe snapshot and a completed backfill
 3. retry dataset build or training
+
+## Intraday Validation Returns `Expand the intraday history first`
+
+Symptoms:
+
+- intraday validation cannot build walk-forward folds
+
+Fix:
+
+1. run `stocktradebot intraday-backfill --frequency 15min` or the matching `1h` flow with enough lookback history
+2. build an intraday dataset with `stocktradebot intraday-dataset --frequency ...`
+3. rerun intraday validation after confirmed verified intraday bars and dataset rows exist
 
 ## System Remains Frozen
 
