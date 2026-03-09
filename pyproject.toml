@@ -38,6 +38,16 @@ stocktradebot = "stocktradebot.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/stocktradebot"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"frontend/dist" = "stocktradebot/frontend/dist"
+"alembic" = "stocktradebot/alembic"
+"alembic.ini" = "stocktradebot/alembic.ini"
+
+[tool.hatch.build.targets.sdist.force-include]
+"frontend/dist" = "frontend/dist"
+"alembic" = "alembic"
+"alembic.ini" = "alembic.ini"
+
 [tool.pytest.ini_options]
 addopts = "--cov=stocktradebot --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
