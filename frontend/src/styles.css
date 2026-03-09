@@ -82,6 +82,15 @@ code {
   color: rgba(17, 17, 17, 0.72);
   line-height: 1.6;
 }
+.log-details {
+  margin-top: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  background: rgba(17, 17, 17, 0.04);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+}
 
 .hero-panel__status {
   min-width: 220px;
