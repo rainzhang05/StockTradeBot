@@ -334,6 +334,46 @@ class ModelTrainingConfig:
 
 
 @dataclass(slots=True)
+class IntradayResearchConfig:
+    enabled_frequencies: list[str] = field(default_factory=lambda: ["15min", "1h"])
+    primary_provider: str = "alpha_vantage"
+    secondary_provider: str | None = None
+    minimum_session_coverage: float = 0.95
+    minimum_verified_ratio: float = 0.95
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> IntradayResearchConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        secondary_provider = data.get("secondary_provider", defaults.secondary_provider)
+        return cls(
+            enabled_frequencies=[
+                str(value)
+                for value in data.get("enabled_frequencies", defaults.enabled_frequencies)
+            ],
+            primary_provider=str(data.get("primary_provider", defaults.primary_provider)),
+            secondary_provider=(None if secondary_provider is None else str(secondary_provider)),
+            minimum_session_coverage=float(
+                data.get("minimum_session_coverage", defaults.minimum_session_coverage)
+            ),
+            minimum_verified_ratio=float(
+                data.get("minimum_verified_ratio", defaults.minimum_verified_ratio)
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled_frequencies": self.enabled_frequencies,
+            "primary_provider": self.primary_provider,
+            "secondary_provider": self.secondary_provider,
+            "minimum_session_coverage": self.minimum_session_coverage,
+            "minimum_verified_ratio": self.minimum_verified_ratio,
+        }
+
+
+@dataclass(slots=True)
 class PortfolioConfig:
     max_position_weight: float = 0.10
     sector_exposure_soft_cap: float = 0.30
@@ -644,6 +684,7 @@ class AppConfig:
     )
     universe: UniverseConfig = field(default_factory=UniverseConfig)
     model_training: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
+    intraday_research: IntradayResearchConfig = field(default_factory=IntradayResearchConfig)
     portfolio: PortfolioConfig = field(default_factory=PortfolioConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
@@ -681,6 +722,7 @@ class AppConfig:
             ),
             universe=UniverseConfig.from_dict(data.get("universe")),
             model_training=ModelTrainingConfig.from_dict(data.get("model_training")),
+            intraday_research=IntradayResearchConfig.from_dict(data.get("intraday_research")),
             portfolio=PortfolioConfig.from_dict(data.get("portfolio")),
             risk=RiskConfig.from_dict(data.get("risk")),
             execution=ExecutionConfig.from_dict(data.get("execution")),
@@ -700,6 +742,7 @@ class AppConfig:
             "fundamentals_provider": self.fundamentals_provider.to_dict(),
             "universe": self.universe.to_dict(),
             "model_training": self.model_training.to_dict(),
+            "intraday_research": self.intraday_research.to_dict(),
             "portfolio": self.portfolio.to_dict(),
             "risk": self.risk.to_dict(),
             "execution": self.execution.to_dict(),
