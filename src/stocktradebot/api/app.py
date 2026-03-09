@@ -11,7 +11,17 @@ from fastapi.staticfiles import StaticFiles
 from stocktradebot import __version__
 from stocktradebot.config import AppConfig, load_config
 from stocktradebot.data import market_data_status
-from stocktradebot.execution import simulate_trading_day, simulation_status
+from stocktradebot.execution import (
+    approve_live_trading_run,
+    arm_live_mode,
+    live_status,
+    paper_status,
+    paper_trade_day,
+    prepare_live_trading_day,
+    run_live_trading_day,
+    simulate_trading_day,
+    simulation_status,
+)
 from stocktradebot.features import build_dataset_snapshot, dataset_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
 from stocktradebot.models import backtest_model, model_status, train_model
@@ -65,6 +75,13 @@ def create_app(
     @app.get("/api/v1/system/mode")
     def system_mode() -> dict[str, object]:
         return {"mode_state": simulation_status(app_config)["mode_state"]}
+
+    @app.get("/api/v1/broker/status")
+    def broker_state() -> dict[str, object]:
+        return {
+            "paper": paper_status(app_config),
+            "live": live_status(app_config),
+        }
 
     @app.get("/api/v1/market-data/status")
     def market_data_job_status() -> dict[str, object]:
@@ -143,6 +160,14 @@ def create_app(
         snapshot = simulation_status(app_config)
         return {"items": snapshot["latest_fills"]}
 
+    @app.get("/api/v1/paper/status")
+    def paper_mode_status() -> dict[str, object]:
+        return paper_status(app_config)
+
+    @app.get("/api/v1/live/status")
+    def live_mode_status() -> dict[str, object]:
+        return live_status(app_config)
+
     @app.post("/api/v1/models/datasets/build")
     def build_dataset(as_of: str | None = None) -> dict[str, object]:
         try:
@@ -193,6 +218,93 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"simulation_run": asdict(summary)}
+
+    @app.post("/api/v1/paper/run")
+    def run_paper(
+        as_of: str | None = None,
+        model_version: str | None = None,
+    ) -> dict[str, object]:
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = paper_trade_day(
+                app_config,
+                as_of_date=parsed_date,
+                model_version=model_version,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"paper_run": asdict(summary)}
+
+    @app.post("/api/v1/live/arm")
+    def arm_live(
+        profile: str = "manual",
+        ack_disable_approvals: bool = False,
+    ) -> dict[str, object]:
+        try:
+            summary = arm_live_mode(
+                app_config,
+                profile=profile,
+                ack_disable_approvals=ack_disable_approvals,
+                source="api",
+                reason="live arm requested via API",
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"mode_transition": asdict(summary)}
+
+    @app.post("/api/v1/live/run")
+    def run_live(
+        as_of: str | None = None,
+        model_version: str | None = None,
+        ack_disable_approvals: bool = False,
+    ) -> dict[str, object]:
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            mode_snapshot = simulation_status(app_config)["mode_state"]
+            if mode_snapshot is None:
+                raise RuntimeError("Mode state is unavailable.")
+            current_mode = str(mode_snapshot["current_mode"])
+            if current_mode == "live-autonomous":
+                run_summary = run_live_trading_day(
+                    app_config,
+                    as_of_date=parsed_date,
+                    model_version=model_version,
+                    ack_disable_approvals=ack_disable_approvals,
+                )
+                return {"live_run": asdict(run_summary)}
+            preparation_summary = prepare_live_trading_day(
+                app_config,
+                as_of_date=parsed_date,
+                model_version=model_version,
+            )
+            return {"live_preparation": asdict(preparation_summary)}
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/v1/live/approvals")
+    def approve_live(
+        run_id: int | None = None,
+        approve_all: bool = False,
+        approve_symbol: list[str] | None = None,
+        reject_symbol: list[str] | None = None,
+    ) -> dict[str, object]:
+        try:
+            summary = approve_live_trading_run(
+                app_config,
+                run_id=run_id,
+                approve_all=approve_all,
+                approve_symbols=approve_symbol,
+                reject_symbols=reject_symbol,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"approval_result": asdict(summary)}
 
     @app.get("/", response_class=HTMLResponse, response_model=None)
     def root() -> Response:
