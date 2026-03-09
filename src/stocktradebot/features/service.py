@@ -306,12 +306,19 @@ def _snapshot_for_trade_date(
 ) -> tuple[int | None, set[str]]:
     active_snapshot_id: int | None = None
     active_symbols: set[str] = set()
+    earliest_snapshot_id: int | None = None
+    earliest_symbols: set[str] = set()
     for snapshot, members in snapshots:
+        if earliest_snapshot_id is None:
+            earliest_snapshot_id = snapshot.id
+            earliest_symbols = members
         if snapshot.effective_date <= trade_date:
             active_snapshot_id = snapshot.id
             active_symbols = members
         else:
             break
+    if active_snapshot_id is None:
+        return earliest_snapshot_id, earliest_symbols
     return active_snapshot_id, active_symbols
 
 
@@ -383,10 +390,15 @@ def _prior_year_value(
 def _fundamentals_as_of(
     observations: Sequence[FundamentalObservationRecord],
     *,
-    trade_date: date,
+    trade_date: date | None = None,
+    as_of_datetime: datetime | None = None,
     close: float,
 ) -> tuple[dict[str, float | None], datetime | None]:
-    as_of_datetime = _trade_datetime(trade_date)
+    if as_of_datetime is None:
+        if trade_date is None:
+            raise ValueError("trade_date or as_of_datetime is required")
+        as_of_datetime = _trade_datetime(trade_date)
+    as_of_datetime = _ensure_utc(as_of_datetime)
     by_metric: dict[str, list[FundamentalObservationRecord]] = defaultdict(list)
     for observation in observations:
         by_metric[observation.metric_name].append(observation)
