@@ -61,6 +61,8 @@ class BackfillRun(Base):
     requested_symbols: Mapped[str] = mapped_column(Text, nullable=False)
     primary_provider: Mapped[str] = mapped_column(String(50), nullable=False)
     secondary_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    domain: Mapped[str] = mapped_column(String(32), nullable=False, default="daily", index=True)
+    frequency: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     lookback_days: Mapped[int] = mapped_column(Integer, nullable=False)
     summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
@@ -135,6 +137,57 @@ class CanonicalDailyBar(Base):
 
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     trade_date: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    open: Mapped[float] = mapped_column(Float, nullable=False)
+    high: Mapped[float] = mapped_column(Float, nullable=False)
+    low: Mapped[float] = mapped_column(Float, nullable=False)
+    close: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    validation_tier: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    primary_provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    confirming_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    field_provenance: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class IntradayBarObservation(Base):
+    __tablename__ = "intraday_bar_observations"
+
+    provider: Mapped[str] = mapped_column(String(50), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
+    frequency: Mapped[str] = mapped_column(String(16), primary_key=True, index=True)
+    bar_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True, index=True
+    )
+    session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    open: Mapped[float] = mapped_column(Float, nullable=False)
+    high: Mapped[float] = mapped_column(Float, nullable=False)
+    low: Mapped[float] = mapped_column(Float, nullable=False)
+    close: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    split_adjusted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    payload_id: Mapped[int | None] = mapped_column(
+        ForeignKey("provider_payloads.id"), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class CanonicalIntradayBar(Base):
+    __tablename__ = "canonical_intraday_bars"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    frequency: Mapped[str] = mapped_column(String(16), primary_key=True, index=True)
+    bar_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True, index=True
+    )
+    session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     open: Mapped[float] = mapped_column(Float, nullable=False)
     high: Mapped[float] = mapped_column(Float, nullable=False)
     low: Mapped[float] = mapped_column(Float, nullable=False)
@@ -290,6 +343,10 @@ class DatasetSnapshot(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    as_of_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="daily", index=True)
     universe_snapshot_id: Mapped[int | None] = mapped_column(
         ForeignKey("universe_snapshots.id"),
         nullable=True,
@@ -319,6 +376,7 @@ class ModelTrainingRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="daily", index=True)
     dataset_snapshot_id: Mapped[int | None] = mapped_column(
         ForeignKey("dataset_snapshots.id"),
         nullable=True,
@@ -339,6 +397,7 @@ class ModelRegistryEntry(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     version: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     family: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="daily", index=True)
     dataset_snapshot_id: Mapped[int] = mapped_column(
         ForeignKey("dataset_snapshots.id"),
         nullable=False,
@@ -363,6 +422,7 @@ class ValidationRun(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="daily", index=True)
     dataset_snapshot_id: Mapped[int] = mapped_column(
         ForeignKey("dataset_snapshots.id"),
         nullable=False,
@@ -387,6 +447,7 @@ class BacktestRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="daily", index=True)
     dataset_snapshot_id: Mapped[int] = mapped_column(
         ForeignKey("dataset_snapshots.id"),
         nullable=False,
