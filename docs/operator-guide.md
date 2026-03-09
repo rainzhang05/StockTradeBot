@@ -1,6 +1,6 @@
 # StockTradeBot Operator Guide
 
-This guide describes the supported local operator workflow for the Phase 8 release-ready system.
+This guide describes the supported local operator workflow for the current Phase 9 system.
 
 ## Intended Install Flow
 
@@ -39,9 +39,10 @@ Typical daily sequence:
 1. open `Dashboard` and confirm current mode, freeze status, broker state, and latest jobs
 2. review `Data` for recent incidents and canonicalization health
 3. run a backfill when the universe or latest bars are stale
-4. build a dataset, train, and backtest from `Research` when model refresh is needed
-5. run `Simulation` first, then `Paper` when broker connectivity is healthy
-6. enter `Live Manual` only after paper safe-day gates and approval requirements are satisfied
+4. run an intraday backfill and intraday validation from the CLI or API when intraday research needs refreshing
+5. build a dataset, train, and backtest from `Research` when model refresh is needed
+6. run `Simulation` first, then `Paper` when broker connectivity is healthy
+7. enter `Live Manual` only after paper safe-day gates and approval requirements are satisfied
 
 ## Mode Safety Rules
 
@@ -53,7 +54,7 @@ Typical daily sequence:
 
 ## Logs and Audit Trail
 
-Phase 8 adds two operator-facing diagnostics:
+Current operator-facing diagnostics include:
 
 - `System -> Audit events`: persisted state-changing actions
 - `System -> Operational logs`: recent structured runtime events from `logs/events.jsonl`
