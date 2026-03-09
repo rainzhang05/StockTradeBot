@@ -49,21 +49,24 @@ def render_placeholder_html() -> str:
   </head>
   <body>
     <main>
-      <h1>StockTradeBot Phase 1</h1>
+      <h1>StockTradeBot Phase 3</h1>
       <p>
-        The backend is running. The production frontend will live in
-        <code>frontend/</code> and later phases will serve the built assets from here.
+        The backend is running. The production frontend lives in
+        <code>frontend/</code>, and the Python app will serve the built assets from here.
       </p>
       <div class="card">
         <h2>Available today</h2>
         <p>
-          FastAPI runtime skeleton, SQLite bootstrap, Alembic migrations,
-          CLI init/doctor/status, and CI/test baselines.
+          FastAPI runtime, SQLite bootstrap, Alembic migrations, market-data backfill,
+          dataset snapshot builds, and CI/test baselines.
         </p>
       </div>
       <div class="card">
         <h2>API</h2>
-        <p>Health endpoint: <code>/api/v1/health</code></p>
+        <p>
+          Health: <code>/api/v1/health</code> | Dataset status:
+          <code>/api/v1/models/datasets/latest</code>
+        </p>
       </div>
     </main>
   </body>
