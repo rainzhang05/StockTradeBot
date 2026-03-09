@@ -13,6 +13,7 @@ from stocktradebot.config import AppConfig, load_config
 from stocktradebot.data import market_data_status
 from stocktradebot.features import build_dataset_snapshot, dataset_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
+from stocktradebot.models import backtest_model, model_status, train_model
 from stocktradebot.runtime import build_ui_url, collect_doctor_checks, runtime_status
 
 
@@ -87,6 +88,25 @@ def create_app(
             "label_versions": snapshot["label_versions"],
         }
 
+    @app.get("/api/v1/models/status")
+    def models_status() -> dict[str, object]:
+        return model_status(app_config)
+
+    @app.get("/api/v1/models/latest")
+    def latest_model() -> dict[str, object]:
+        snapshot = model_status(app_config)
+        return {"model": snapshot["latest_model"]}
+
+    @app.get("/api/v1/models/validations/latest")
+    def latest_validation() -> dict[str, object]:
+        snapshot = model_status(app_config)
+        return {"validation": snapshot["latest_validation_run"]}
+
+    @app.get("/api/v1/models/backtests/latest")
+    def latest_backtest() -> dict[str, object]:
+        snapshot = model_status(app_config)
+        return {"backtest": snapshot["latest_backtest_run"]}
+
     @app.post("/api/v1/models/datasets/build")
     def build_dataset(as_of: str | None = None) -> dict[str, object]:
         try:
@@ -98,6 +118,26 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"snapshot": asdict(summary)}
+
+    @app.post("/api/v1/models/train")
+    def train_model_endpoint(as_of: str | None = None) -> dict[str, object]:
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = train_model(app_config, as_of_date=parsed_date)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"training_run": asdict(summary)}
+
+    @app.post("/api/v1/models/backtests/run")
+    def backtest_model_endpoint(model_version: str | None = None) -> dict[str, object]:
+        try:
+            summary = backtest_model(app_config, model_version=model_version)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"backtest_run": asdict(summary)}
 
     @app.get("/", response_class=HTMLResponse, response_model=None)
     def root() -> Response:
