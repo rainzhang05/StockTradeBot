@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from stocktradebot.config import AppConfig, initialize_config, load_config
+from stocktradebot.data import market_data_status
+from stocktradebot.data.providers import build_provider_registry
 from stocktradebot.storage import (
     database_exists,
     database_is_reachable,
@@ -54,11 +56,28 @@ def prepare_runtime(
 
 
 def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
+    provider_registry = build_provider_registry(config)
+    configured_secondary = config.data_providers.secondary_provider
     checks = [
         DoctorCheck("app-home", config.app_home.exists(), f"app home: {config.app_home}"),
         DoctorCheck("config", config.config_path.exists(), f"config: {config.config_path}"),
         DoctorCheck("database-file", database_exists(config), f"database: {config.database_path}"),
         DoctorCheck("database-connectivity", database_is_reachable(config), "sqlite reachable"),
+        DoctorCheck(
+            "raw-payload-dir",
+            config.raw_payload_dir.exists(),
+            f"raw payloads: {config.raw_payload_dir}",
+        ),
+        DoctorCheck(
+            "primary-provider",
+            config.data_providers.primary_provider in provider_registry,
+            f"primary provider: {config.data_providers.primary_provider}",
+        ),
+        DoctorCheck(
+            "secondary-provider",
+            configured_secondary is None or configured_secondary in provider_registry,
+            f"secondary provider: {configured_secondary or 'not configured'}",
+        ),
     ]
     return checks
 
@@ -66,6 +85,7 @@ def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
 def runtime_status(app_home: Path | None = None) -> dict[str, object]:
     config = load_config(app_home)
     checks = collect_doctor_checks(config)
+    has_database = database_exists(config) and database_is_reachable(config)
     return {
         "app_home": str(config.app_home),
         "config_path": str(config.config_path),
@@ -74,4 +94,5 @@ def runtime_status(app_home: Path | None = None) -> dict[str, object]:
         "initialized": config.config_path.exists() and database_exists(config),
         "schema_version": read_app_state(config, "schema_version"),
         "checks": [asdict(check) for check in checks],
+        "market_data": market_data_status(config) if has_database else None,
     }
