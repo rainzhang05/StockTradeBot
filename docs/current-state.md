@@ -6,8 +6,8 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - Date: 2026-03-09
 - Branch: `main`
-- Repository state: Phase 7 operator UI implemented
-- Application code: package, CLI, API, runtime, storage, operator frontend, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
+- Repository state: Phase 8 hardening and release readiness implemented
+- Application code: package, CLI, API, runtime, storage, operator frontend, packaged frontend asset serving, structured operational logging, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
 - CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, and package verification
 - Tests: backend and frontend verification suites created through Phase 7
 - Database schema: Phase 6 SQLite schema and Alembic migrations created
@@ -51,6 +51,10 @@ This file describes the repository as it exists now. Update it at the end of eve
 - replaced the frontend placeholder with a full operator UI covering setup, dashboard, portfolio, orders, research, data, and system screens
 - added browser-tested manual approval, research, setup, and mode-control workflows in a dedicated frontend E2E lane
 - updated the fallback frontend placeholder and README to describe the Phase 7 operator UI
+- packaged the built frontend into release artifacts and updated runtime asset discovery so installed builds serve the operator UI instead of the placeholder page
+- added structured JSONL operational logging, API exposure for recent logs, and a System-screen operational log feed
+- hardened package verification to build the frontend, build the wheel, install it in isolation, and smoke-test the installed runtime UI path
+- added operator guide, troubleshooting guidance, and an explicit release process for the local-first shipped workflow
 
 ## Subsystem Status Matrix
 
@@ -65,9 +69,9 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Models/backtesting | Complete for Phase 4 | Deterministic baseline training, walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
-| Frontend/UI | Complete for Phase 7 | Operator dashboard, setup flow, control screens, and live approval UX are implemented in `frontend/` |
-| Tests/coverage | Complete for Phase 7 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E |
-| GitHub Actions | Complete for Phase 7 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build |
+| Frontend/UI | Complete for Phase 8 | Operator dashboard, setup flow, control screens, live approval UX, and release-packaged frontend serving are implemented |
+| Tests/coverage | Complete for Phase 8 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E; package smoke verification now tests installed runtime serving |
+| GitHub Actions | Complete for Phase 8 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build plus installed-wheel smoke verification |
 
 ## Active Constraints
 
@@ -95,8 +99,8 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Next Milestone
 
-- start Phase 8 from `docs/roadmap.md`
-- harden packaging, operator documentation, and release readiness around the now-complete local operator experience
+- start Phase 9 from `docs/roadmap.md`
+- extend the daily-first system into promotable intraday research only after free-source feasibility and data-quality rules are defined
 
 ## Verification Status
 
@@ -107,10 +111,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 - frontend checks: `npm run lint`, `npm run test -- --run`, and `npm run build` passed locally in `frontend/`
 - frontend browser E2E: `make frontend-e2e` passed locally
 - package build: `make package-check` passed locally
+- package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, and verify the installed runtime serves the bundled UI
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
 - backend-served browser smoke: passed locally against `stocktradebot --app-home /tmp/stocktradebot-phase7.Xt2YBf --host 127.0.0.1 --port 8011 --no-browser`, verified in Chromium and captured to `output/playwright/phase7-backend-ui.png`
 - Phase 7 integration verification: full pytest suite passed locally, including paper execution, live-manual preparation and approval, API control surfaces, config mutation, mode transitions, and browser-driven operator workflows
 
 ## Last Updated Because
 
-- 2026-03-09: completed the Phase 7 operator dashboard, setup/config API flow, mode-control UI, frontend E2E coverage, and final verification updates
+- 2026-03-09: completed Phase 8 hardening for packaged frontend serving, operational logs, release verification, and operator/release documentation
