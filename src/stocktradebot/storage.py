@@ -423,6 +423,21 @@ class SystemModeState(Base):
     )
 
 
+class ModeTransitionEvent(Base):
+    __tablename__ = "mode_transition_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    previous_mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    new_mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    live_profile: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
 class FreezeEvent(Base):
     __tablename__ = "freeze_events"
 
@@ -568,6 +583,119 @@ class ExecutionFill(Base):
     )
 
 
+class BrokerAccountSnapshot(Base):
+    __tablename__ = "broker_account_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("simulation_runs.id"),
+        nullable=True,
+        index=True,
+    )
+    broker_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    net_liquidation: Mapped[float] = mapped_column(Float, nullable=False)
+    cash_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    buying_power: Mapped[float] = mapped_column(Float, nullable=False)
+    available_funds: Mapped[float] = mapped_column(Float, nullable=False)
+    cushion: Mapped[float | None] = mapped_column(Float, nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
+class BrokerPositionSnapshot(Base):
+    __tablename__ = "broker_position_snapshots"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("broker_account_snapshots.id"),
+        primary_key=True,
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    market_price: Mapped[float] = mapped_column(Float, nullable=False)
+    market_value: Mapped[float] = mapped_column(Float, nullable=False)
+    average_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unrealized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+
+class BrokerOrder(Base):
+    __tablename__ = "broker_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("simulation_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    order_intent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("order_intents.id"),
+        nullable=True,
+        index=True,
+    )
+    broker_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    broker_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    broker_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    approval_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    time_in_force: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_shares: Mapped[float] = mapped_column(Float, nullable=False)
+    filled_shares: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    average_fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    preview_commission: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class OrderApproval(Base):
+    __tablename__ = "order_approvals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("simulation_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    order_intent_id: Mapped[int] = mapped_column(
+        ForeignKey("order_intents.id"),
+        nullable=False,
+        index=True,
+    )
+    broker_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("broker_orders.id"),
+        nullable=True,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -587,7 +715,7 @@ def create_db_engine(config: AppConfig) -> Engine:
 def initialize_database(config: AppConfig) -> None:
     config.ensure_runtime_dirs()
     command.upgrade(alembic_config(config.database_url()), "head")
-    upsert_app_state(config, "schema_version", "phase5")
+    upsert_app_state(config, "schema_version", "phase6")
     ensure_system_mode_state(config)
 
 
