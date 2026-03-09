@@ -6,6 +6,7 @@ from pathlib import Path
 from stocktradebot.config import AppConfig, initialize_config, load_config
 from stocktradebot.data import market_data_status
 from stocktradebot.data.providers import build_provider_registry
+from stocktradebot.features import dataset_status
 from stocktradebot.storage import (
     database_exists,
     database_is_reachable,
@@ -58,6 +59,9 @@ def prepare_runtime(
 def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
     provider_registry = build_provider_registry(config)
     configured_secondary = config.data_providers.secondary_provider
+    fundamentals_ready = (
+        not config.fundamentals_provider.enabled
+    ) or config.fundamentals_provider.resolved_user_agent() is not None
     checks = [
         DoctorCheck("app-home", config.app_home.exists(), f"app home: {config.app_home}"),
         DoctorCheck("config", config.config_path.exists(), f"config: {config.config_path}"),
@@ -78,6 +82,24 @@ def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
             configured_secondary is None or configured_secondary in provider_registry,
             f"secondary provider: {configured_secondary or 'not configured'}",
         ),
+        DoctorCheck(
+            "fundamentals-provider",
+            fundamentals_ready,
+            (
+                "fundamentals provider disabled"
+                if not config.fundamentals_provider.enabled
+                else (
+                    "SEC fundamentals provider ready"
+                    if fundamentals_ready
+                    else "SEC fundamentals provider requires a configured user agent"
+                )
+            ),
+        ),
+        DoctorCheck(
+            "dataset-artifacts-dir",
+            config.dataset_artifacts_dir.exists(),
+            f"datasets: {config.dataset_artifacts_dir}",
+        ),
     ]
     return checks
 
@@ -95,4 +117,5 @@ def runtime_status(app_home: Path | None = None) -> dict[str, object]:
         "schema_version": read_app_state(config, "schema_version"),
         "checks": [asdict(check) for check in checks],
         "market_data": market_data_status(config) if has_database else None,
+        "datasets": dataset_status(config) if has_database else None,
     }
