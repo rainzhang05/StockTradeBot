@@ -10,6 +10,7 @@ from stocktradebot.data.providers import build_provider_registry
 from stocktradebot.execution import simulation_status
 from stocktradebot.features import dataset_status
 from stocktradebot.models import model_status
+from stocktradebot.observability import record_operational_event
 from stocktradebot.storage import (
     database_exists,
     database_is_reachable,
@@ -51,6 +52,12 @@ def prepare_runtime(
     config = initialize_config(app_home)
     initialize_database(config)
     record_audit_event(config, "runtime", "runtime prepared")
+    record_operational_event(
+        config,
+        category="runtime",
+        message="runtime prepared",
+        details={"host": host or config.api_host, "port": port or config.api_port},
+    )
     checks = collect_doctor_checks(config)
     return RuntimeBootstrap(
         config=config,
