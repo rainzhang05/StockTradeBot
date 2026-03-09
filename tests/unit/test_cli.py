@@ -23,6 +23,7 @@ def test_init_command_bootstraps_runtime(isolated_app_home: Path) -> None:
     assert result.exit_code == 0
     assert "Initialized StockTradeBot" in result.stdout
     assert (isolated_app_home / "config.json").exists()
+    assert (isolated_app_home / "logs" / "events.jsonl").exists()
 
 
 def test_doctor_command_reports_all_checks(isolated_app_home: Path) -> None:
