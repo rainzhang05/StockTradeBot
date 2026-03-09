@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import webbrowser
+from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 
@@ -10,6 +12,7 @@ import uvicorn
 
 from stocktradebot.api import create_app
 from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, initialize_config
+from stocktradebot.data import backfill_market_data
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
 
@@ -26,6 +29,16 @@ PortOption = Annotated[int, typer.Option()]
 NoBrowserOption = Annotated[bool, typer.Option()]
 CheckOnlyOption = Annotated[bool, typer.Option()]
 ForceOption = Annotated[bool, typer.Option(help="Overwrite the config file with defaults.")]
+AsOfOption = Annotated[
+    str | None,
+    typer.Option(help="Backfill as of this date in YYYY-MM-DD format."),
+]
+LookbackDaysOption = Annotated[int, typer.Option(min=30)]
+SymbolsOption = Annotated[
+    list[str] | None,
+    typer.Option("--symbol", "-s", help="Repeat to backfill specific symbols."),
+]
+ProviderNameOption = Annotated[str | None, typer.Option()]
 
 
 @app.callback(invoke_without_command=True)
@@ -89,9 +102,36 @@ def status(app_home: AppHomeOption = None) -> None:
     typer.echo(json.dumps(runtime_status(app_home), indent=2))
 
 
+def _parse_as_of_date(as_of: str | None) -> date | None:
+    if as_of is None:
+        return None
+
+    try:
+        return date.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter("Expected YYYY-MM-DD date format.") from exc
+
+
 @app.command()
-def backfill() -> None:
-    _placeholder("backfill")
+def backfill(
+    app_home: AppHomeOption = None,
+    as_of: AsOfOption = None,
+    lookback_days: LookbackDaysOption = 120,
+    symbol: SymbolsOption = None,
+    primary_provider: ProviderNameOption = None,
+    secondary_provider: ProviderNameOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    summary = backfill_market_data(
+        config,
+        as_of_date=_parse_as_of_date(as_of),
+        lookback_days=lookback_days,
+        symbols=symbol,
+        primary_provider=primary_provider,
+        secondary_provider=secondary_provider,
+    )
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
 @app.command()
