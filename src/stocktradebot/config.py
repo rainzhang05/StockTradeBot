@@ -11,6 +11,8 @@ DEFAULT_PORT = 8000
 CONFIG_FILENAME = "config.json"
 DEFAULT_STOOQ_BASE_URL = "https://stooq.com"
 DEFAULT_ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co"
+DEFAULT_SEC_COMPANY_FACTS_BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
+DEFAULT_SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
 
 def resolve_app_home(app_home: Path | None = None) -> Path:
@@ -198,6 +200,96 @@ class UniverseConfig:
 
 
 @dataclass(slots=True)
+class FundamentalsProviderConfig:
+    enabled: bool = False
+    base_url: str = DEFAULT_SEC_COMPANY_FACTS_BASE_URL
+    ticker_mapping_url: str = DEFAULT_SEC_TICKERS_URL
+    timeout_seconds: float = 20.0
+    user_agent_env_var: str = "SEC_USER_AGENT"
+    user_agent: str | None = None
+    symbol_to_cik: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> FundamentalsProviderConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        user_agent = data.get("user_agent", defaults.user_agent)
+        symbol_to_cik = {
+            str(symbol).upper(): str(cik).zfill(10)
+            for symbol, cik in data.get("symbol_to_cik", {}).items()
+        }
+        return cls(
+            enabled=bool(data.get("enabled", defaults.enabled)),
+            base_url=str(data.get("base_url", defaults.base_url)),
+            ticker_mapping_url=str(data.get("ticker_mapping_url", defaults.ticker_mapping_url)),
+            timeout_seconds=float(data.get("timeout_seconds", defaults.timeout_seconds)),
+            user_agent_env_var=str(data.get("user_agent_env_var", defaults.user_agent_env_var)),
+            user_agent=None if user_agent is None else str(user_agent),
+            symbol_to_cik=symbol_to_cik,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "base_url": self.base_url,
+            "ticker_mapping_url": self.ticker_mapping_url,
+            "timeout_seconds": self.timeout_seconds,
+            "user_agent_env_var": self.user_agent_env_var,
+            "user_agent": self.user_agent,
+            "symbol_to_cik": self.symbol_to_cik,
+        }
+
+    def resolved_user_agent(self) -> str | None:
+        env_user_agent = os.getenv(self.user_agent_env_var)
+        if env_user_agent:
+            return env_user_agent
+        return self.user_agent
+
+
+@dataclass(slots=True)
+class ModelTrainingConfig:
+    feature_set_version: str = "daily-core-v1"
+    label_version: str = "forward-return-v1"
+    benchmark_symbol: str = "SPY"
+    min_feature_history_days: int = 60
+    min_label_history_days: int = 10
+    dataset_lookback_days: int = 400
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> ModelTrainingConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        return cls(
+            feature_set_version=str(data.get("feature_set_version", defaults.feature_set_version)),
+            label_version=str(data.get("label_version", defaults.label_version)),
+            benchmark_symbol=str(data.get("benchmark_symbol", defaults.benchmark_symbol)).upper(),
+            min_feature_history_days=int(
+                data.get("min_feature_history_days", defaults.min_feature_history_days)
+            ),
+            min_label_history_days=int(
+                data.get("min_label_history_days", defaults.min_label_history_days)
+            ),
+            dataset_lookback_days=int(
+                data.get("dataset_lookback_days", defaults.dataset_lookback_days)
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feature_set_version": self.feature_set_version,
+            "label_version": self.label_version,
+            "benchmark_symbol": self.benchmark_symbol,
+            "min_feature_history_days": self.min_feature_history_days,
+            "min_label_history_days": self.min_label_history_days,
+            "dataset_lookback_days": self.dataset_lookback_days,
+        }
+
+
+@dataclass(slots=True)
 class AppConfig:
     app_home: Path
     config_path: Path
@@ -209,7 +301,11 @@ class AppConfig:
     open_browser_on_launch: bool = True
     timezone: str = "local"
     data_providers: DataProvidersConfig = field(default_factory=DataProvidersConfig)
+    fundamentals_provider: FundamentalsProviderConfig = field(
+        default_factory=FundamentalsProviderConfig
+    )
     universe: UniverseConfig = field(default_factory=UniverseConfig)
+    model_training: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
 
     @classmethod
     def default(cls, app_home: Path | None = None) -> AppConfig:
@@ -238,7 +334,11 @@ class AppConfig:
             ),
             timezone=str(data.get("timezone", defaults.timezone)),
             data_providers=DataProvidersConfig.from_dict(data.get("data_providers")),
+            fundamentals_provider=FundamentalsProviderConfig.from_dict(
+                data.get("fundamentals_provider")
+            ),
             universe=UniverseConfig.from_dict(data.get("universe")),
+            model_training=ModelTrainingConfig.from_dict(data.get("model_training")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -251,7 +351,9 @@ class AppConfig:
             "open_browser_on_launch": self.open_browser_on_launch,
             "timezone": self.timezone,
             "data_providers": self.data_providers.to_dict(),
+            "fundamentals_provider": self.fundamentals_provider.to_dict(),
             "universe": self.universe.to_dict(),
+            "model_training": self.model_training.to_dict(),
         }
 
     def database_url(self) -> str:
@@ -261,12 +363,17 @@ class AppConfig:
     def raw_payload_dir(self) -> Path:
         return self.artifacts_dir / "raw-provider-payloads"
 
+    @property
+    def dataset_artifacts_dir(self) -> Path:
+        return self.artifacts_dir / "datasets"
+
     def ensure_runtime_dirs(self) -> None:
         self.app_home.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.raw_payload_dir.mkdir(parents=True, exist_ok=True)
+        self.dataset_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self) -> None:
         self.ensure_runtime_dirs()
