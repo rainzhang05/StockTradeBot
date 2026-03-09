@@ -49,27 +49,25 @@ def render_placeholder_html() -> str:
   </head>
   <body>
     <main>
-      <h1>StockTradeBot Phase 6</h1>
+      <h1>StockTradeBot Phase 7</h1>
       <p>
-        The backend is running. The production frontend lives in
-        <code>frontend/</code>, and the Python app will serve the built assets from here.
+        The backend is running, but the built frontend bundle is not present yet.
+        Build the operator dashboard from <code>frontend/</code> and the Python app will
+        serve it here.
       </p>
       <div class="card">
         <h2>Available today</h2>
         <p>
-          FastAPI runtime, SQLite bootstrap, market-data backfill, model training,
-          walk-forward validation, backtests, simulation trading, IBKR paper mode,
-          live-manual approvals, and CI/test baselines.
+          FastAPI runtime, SQLite bootstrap, market-data backfill, dataset generation,
+          model training, walk-forward validation, backtests, simulation trading, IBKR
+          paper mode, live-manual approvals, and the Phase 7 operator UI.
         </p>
       </div>
       <div class="card">
-        <h2>API</h2>
+        <h2>Frontend Build Missing</h2>
         <p>
-          Health: <code>/api/v1/health</code> | Latest model:
-          <code>/api/v1/models/latest</code> | Latest backtest:
-          <code>/api/v1/models/backtests/latest</code> | Broker:
-          <code>/api/v1/broker/status</code> | Live:
-          <code>/api/v1/live/status</code>
+          Run <code>cd frontend &amp;&amp; npm run build</code>, then refresh this page to
+          load the operator dashboard.
         </p>
       </div>
     </main>
