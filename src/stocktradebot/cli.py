@@ -13,7 +13,7 @@ import uvicorn
 from stocktradebot.api import create_app
 from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, initialize_config
 from stocktradebot.data import backfill_market_data
-from stocktradebot.features import build_dataset_snapshot
+from stocktradebot.models import backtest_model, model_status, train_model
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
 
@@ -40,6 +40,9 @@ SymbolsOption = Annotated[
     typer.Option("--symbol", "-s", help="Repeat to backfill specific symbols."),
 ]
 ProviderNameOption = Annotated[str | None, typer.Option()]
+ModelVersionOption = Annotated[
+    str | None, typer.Option(help="Use a specific trained model version.")
+]
 
 
 @app.callback(invoke_without_command=True)
@@ -143,7 +146,7 @@ def train(
     config = initialize_config(app_home)
     initialize_database(config)
     try:
-        summary = build_dataset_snapshot(config, as_of_date=_parse_as_of_date(as_of))
+        summary = train_model(config, as_of_date=_parse_as_of_date(as_of))
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -151,8 +154,18 @@ def train(
 
 
 @app.command()
-def backtest() -> None:
-    _placeholder("backtest")
+def backtest(
+    app_home: AppHomeOption = None,
+    model_version: ModelVersionOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    try:
+        summary = backtest_model(config, model_version=model_version)
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
 @app.command()
@@ -166,5 +179,7 @@ def live() -> None:
 
 
 @app.command()
-def report() -> None:
-    _placeholder("report")
+def report(app_home: AppHomeOption = None) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    typer.echo(json.dumps(model_status(config), indent=2, default=str))
