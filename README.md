@@ -1,6 +1,17 @@
 # StockTradeBot
 
-Phase 7 is implemented. The repository now includes the local-first Python package and FastAPI runtime, SQLite plus Alembic persistence, a React operator dashboard under `frontend/`, free-source daily market-data backfill, SEC-derived approximate fundamentals, availability-aware feature engineering, a deterministic baseline model trainer, walk-forward validation, event-driven backtesting, a persisted simulation execution stack, IBKR Client Portal paper/live broker boundaries with manual live approvals and autonomous gating, and a browser-tested operator UI for setup, monitoring, and control.
+Phase 8 hardening is implemented. The repository now includes the local-first Python package and FastAPI runtime, SQLite plus Alembic persistence, a React operator dashboard under `frontend/`, free-source daily market-data backfill, SEC-derived approximate fundamentals, availability-aware feature engineering, a deterministic baseline model trainer, walk-forward validation, event-driven backtesting, a persisted simulation execution stack, IBKR Client Portal paper/live broker boundaries with manual live approvals and autonomous gating, release-grade packaged frontend serving, structured operational logs, and a browser-tested operator UI for setup, monitoring, and control.
+
+## Release Install Flow
+
+```bash
+pipx install stocktradebot
+stocktradebot init
+stocktradebot doctor
+stocktradebot
+```
+
+The release package now bundles the built frontend so the installed app serves the operator UI without requiring a source checkout.
 
 ## Quick Start
 
@@ -34,3 +45,9 @@ make package-check
 ```
 
 The documentation source of truth lives under [`docs/`](/Users/rainzhang/StockTradeBot/docs/README.md).
+
+Additional operator-facing docs:
+
+- [`docs/operator-guide.md`](/Users/rainzhang/StockTradeBot/docs/operator-guide.md)
+- [`docs/troubleshooting.md`](/Users/rainzhang/StockTradeBot/docs/troubleshooting.md)
+- [`docs/release-process.md`](/Users/rainzhang/StockTradeBot/docs/release-process.md)
