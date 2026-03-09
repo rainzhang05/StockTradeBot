@@ -252,10 +252,21 @@ class FundamentalsProviderConfig:
 class ModelTrainingConfig:
     feature_set_version: str = "daily-core-v1"
     label_version: str = "forward-return-v1"
+    model_family: str = "linear-correlation-v1"
+    target_label_name: str = "ranking_label_5d"
     benchmark_symbol: str = "SPY"
     min_feature_history_days: int = 60
     min_label_history_days: int = 10
     dataset_lookback_days: int = 400
+    training_window_days: int = 180
+    validation_window_days: int = 40
+    walk_forward_step_days: int = 20
+    min_training_rows: int = 200
+    min_validation_folds: int = 2
+    target_portfolio_size: int = 10
+    initial_capital: float = 100_000.0
+    commission_bps: float = 1.0
+    slippage_bps: float = 5.0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None = None) -> ModelTrainingConfig:
@@ -266,6 +277,8 @@ class ModelTrainingConfig:
         return cls(
             feature_set_version=str(data.get("feature_set_version", defaults.feature_set_version)),
             label_version=str(data.get("label_version", defaults.label_version)),
+            model_family=str(data.get("model_family", defaults.model_family)),
+            target_label_name=str(data.get("target_label_name", defaults.target_label_name)),
             benchmark_symbol=str(data.get("benchmark_symbol", defaults.benchmark_symbol)).upper(),
             min_feature_history_days=int(
                 data.get("min_feature_history_days", defaults.min_feature_history_days)
@@ -276,16 +289,46 @@ class ModelTrainingConfig:
             dataset_lookback_days=int(
                 data.get("dataset_lookback_days", defaults.dataset_lookback_days)
             ),
+            training_window_days=int(
+                data.get("training_window_days", defaults.training_window_days)
+            ),
+            validation_window_days=int(
+                data.get("validation_window_days", defaults.validation_window_days)
+            ),
+            walk_forward_step_days=int(
+                data.get("walk_forward_step_days", defaults.walk_forward_step_days)
+            ),
+            min_training_rows=int(data.get("min_training_rows", defaults.min_training_rows)),
+            min_validation_folds=int(
+                data.get("min_validation_folds", defaults.min_validation_folds)
+            ),
+            target_portfolio_size=int(
+                data.get("target_portfolio_size", defaults.target_portfolio_size)
+            ),
+            initial_capital=float(data.get("initial_capital", defaults.initial_capital)),
+            commission_bps=float(data.get("commission_bps", defaults.commission_bps)),
+            slippage_bps=float(data.get("slippage_bps", defaults.slippage_bps)),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "feature_set_version": self.feature_set_version,
             "label_version": self.label_version,
+            "model_family": self.model_family,
+            "target_label_name": self.target_label_name,
             "benchmark_symbol": self.benchmark_symbol,
             "min_feature_history_days": self.min_feature_history_days,
             "min_label_history_days": self.min_label_history_days,
             "dataset_lookback_days": self.dataset_lookback_days,
+            "training_window_days": self.training_window_days,
+            "validation_window_days": self.validation_window_days,
+            "walk_forward_step_days": self.walk_forward_step_days,
+            "min_training_rows": self.min_training_rows,
+            "min_validation_folds": self.min_validation_folds,
+            "target_portfolio_size": self.target_portfolio_size,
+            "initial_capital": self.initial_capital,
+            "commission_bps": self.commission_bps,
+            "slippage_bps": self.slippage_bps,
         }
 
 
@@ -367,6 +410,14 @@ class AppConfig:
     def dataset_artifacts_dir(self) -> Path:
         return self.artifacts_dir / "datasets"
 
+    @property
+    def model_artifacts_dir(self) -> Path:
+        return self.artifacts_dir / "models"
+
+    @property
+    def report_artifacts_dir(self) -> Path:
+        return self.artifacts_dir / "reports"
+
     def ensure_runtime_dirs(self) -> None:
         self.app_home.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -374,6 +425,8 @@ class AppConfig:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.raw_payload_dir.mkdir(parents=True, exist_ok=True)
         self.dataset_artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.model_artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self.report_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self) -> None:
         self.ensure_runtime_dirs()
