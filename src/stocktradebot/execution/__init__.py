@@ -1,16 +1,41 @@
-from stocktradebot.execution.service import simulate_trading_day, simulation_status
+from stocktradebot.execution.service import (
+    approve_live_trading_run,
+    arm_live_mode,
+    enter_paper_mode,
+    live_status,
+    paper_status,
+    paper_trade_day,
+    prepare_live_trading_day,
+    run_live_trading_day,
+    simulate_trading_day,
+    simulation_status,
+)
 from stocktradebot.execution.types import (
+    ApprovalSummary,
     FillSummary,
+    ModeTransitionSummary,
     OrderIntentSummary,
     PositionSummary,
     SimulationRunSummary,
+    TradingOperationSummary,
 )
 
 __all__ = [
+    "ApprovalSummary",
     "FillSummary",
+    "ModeTransitionSummary",
     "OrderIntentSummary",
     "PositionSummary",
     "SimulationRunSummary",
+    "TradingOperationSummary",
+    "approve_live_trading_run",
+    "arm_live_mode",
+    "enter_paper_mode",
+    "live_status",
+    "paper_status",
+    "paper_trade_day",
+    "prepare_live_trading_day",
+    "run_live_trading_day",
     "simulate_trading_day",
     "simulation_status",
 ]
