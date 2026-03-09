@@ -19,6 +19,7 @@ def test_initialize_config_creates_expected_paths(isolated_app_home: Path) -> No
     assert config.artifacts_dir.exists()
     assert config.logs_dir.exists()
     assert config.raw_payload_dir.exists()
+    assert config.dataset_artifacts_dir.exists()
 
 
 def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
@@ -26,7 +27,10 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     config.api_port = 8123
     config.timezone = "UTC"
     config.data_providers.secondary_provider = "alpha_vantage"
+    config.fundamentals_provider.enabled = True
+    config.fundamentals_provider.symbol_to_cik = {"AAPL": "320193"}
     config.universe.max_stocks = 120
+    config.model_training.feature_set_version = "daily-core-v2"
     config.save()
 
     loaded = load_config(isolated_app_home)
@@ -35,4 +39,7 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     assert loaded.timezone == "UTC"
     assert loaded.database_path == config.database_path
     assert loaded.data_providers.secondary_provider == "alpha_vantage"
+    assert loaded.fundamentals_provider.enabled is True
+    assert loaded.fundamentals_provider.symbol_to_cik["AAPL"] == "0000320193"
     assert loaded.universe.max_stocks == 120
+    assert loaded.model_training.feature_set_version == "daily-core-v2"
