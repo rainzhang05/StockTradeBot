@@ -18,6 +18,8 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     market_data = client.get("/api/v1/market-data/status")
     incidents = client.get("/api/v1/market-data/incidents")
     universe = client.get("/api/v1/market-data/universe/latest")
+    latest_dataset = client.get("/api/v1/models/datasets/latest")
+    versions = client.get("/api/v1/models/versions")
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
@@ -32,6 +34,11 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert incidents.json()["items"] == []
     assert universe.status_code == 200
     assert universe.json()["snapshot"] is None
+    assert latest_dataset.status_code == 200
+    assert latest_dataset.json()["snapshot"] is None
+    assert versions.status_code == 200
+    assert versions.json()["feature_set_versions"] == []
+    assert versions.json()["label_versions"] == []
 
 
 def test_api_health_reports_runtime_override(isolated_app_home) -> None:
@@ -55,3 +62,25 @@ def test_root_returns_placeholder_ui(isolated_app_home) -> None:
     assert response.status_code == 200
     assert "StockTradeBot" in response.text
     assert response.headers["content-type"].startswith("text/html")
+
+
+def test_dataset_build_endpoint_validates_dates(isolated_app_home) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config))
+
+    response = client.post("/api/v1/models/datasets/build", params={"as_of": "bad-date"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Expected YYYY-MM-DD date format."
+
+
+def test_dataset_build_endpoint_requires_backfill_first(isolated_app_home) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config))
+
+    response = client.post("/api/v1/models/datasets/build", params={"as_of": "2026-03-09"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "No universe snapshots are available. Run backfill first."
