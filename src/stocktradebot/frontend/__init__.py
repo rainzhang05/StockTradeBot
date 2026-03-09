@@ -49,7 +49,7 @@ def render_placeholder_html() -> str:
   </head>
   <body>
     <main>
-      <h1>StockTradeBot Phase 4</h1>
+      <h1>StockTradeBot Phase 5</h1>
       <p>
         The backend is running. The production frontend lives in
         <code>frontend/</code>, and the Python app will serve the built assets from here.
@@ -58,7 +58,7 @@ def render_placeholder_html() -> str:
         <h2>Available today</h2>
         <p>
           FastAPI runtime, SQLite bootstrap, market-data backfill, model training,
-          walk-forward validation, backtests, and CI/test baselines.
+          walk-forward validation, backtests, simulation trading, and CI/test baselines.
         </p>
       </div>
       <div class="card">
@@ -66,7 +66,8 @@ def render_placeholder_html() -> str:
         <p>
           Health: <code>/api/v1/health</code> | Latest model:
           <code>/api/v1/models/latest</code> | Latest backtest:
-          <code>/api/v1/models/backtests/latest</code>
+          <code>/api/v1/models/backtests/latest</code> | Latest simulation:
+          <code>/api/v1/portfolio/status</code>
         </p>
       </div>
     </main>
