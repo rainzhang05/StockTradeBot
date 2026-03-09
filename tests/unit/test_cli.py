@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from stocktradebot.cli import app
+from stocktradebot.data.models import BackfillSummary
 
 runner = CliRunner()
 
@@ -43,8 +45,30 @@ def test_root_command_supports_check_only(isolated_app_home: Path) -> None:
     assert "UI: http://127.0.0.1:8000" in result.stdout
 
 
-def test_placeholder_command_is_available() -> None:
-    result = runner.invoke(app, ["backfill"])
+def test_backfill_command_runs_market_data_flow(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    def fake_backfill_market_data(*args, **kwargs) -> BackfillSummary:
+        return BackfillSummary(
+            run_id=7,
+            as_of_date=date(2026, 3, 6),
+            requested_symbols=("AAPL",),
+            primary_provider="stooq",
+            secondary_provider=None,
+            payload_count=1,
+            observation_count=2,
+            canonical_count=2,
+            incident_count=0,
+            universe_snapshot_id=3,
+            validation_counts={"provisional": 2},
+            providers_used=("stooq",),
+        )
+
+    monkeypatch.setattr("stocktradebot.cli.backfill_market_data", fake_backfill_market_data)
+
+    result = runner.invoke(app, ["backfill", "--symbol", "AAPL", "--as-of", "2026-03-06"])
 
     assert result.exit_code == 0
-    assert "reserved for a later roadmap phase" in result.stdout
+    assert '"run_id": 7' in result.stdout
+    assert '"canonical_count": 2' in result.stdout
