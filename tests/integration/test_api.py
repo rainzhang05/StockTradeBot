@@ -22,6 +22,18 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert setup.json()["initialized"] is True
     assert status.status_code == 200
     assert status.json()["mode"] == "simulation"
+    assert health.json()["ui_url"] == "http://127.0.0.1:8000"
+
+
+def test_api_health_reports_runtime_override(isolated_app_home) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config, runtime_host="0.0.0.0", runtime_port=8010))
+
+    health = client.get("/api/v1/health")
+
+    assert health.status_code == 200
+    assert health.json()["ui_url"] == "http://127.0.0.1:8010"
 
 
 def test_root_returns_placeholder_ui(isolated_app_home) -> None:
@@ -32,4 +44,5 @@ def test_root_returns_placeholder_ui(isolated_app_home) -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "StockTradeBot Phase 1" in response.text
+    assert "StockTradeBot" in response.text
+    assert response.headers["content-type"].startswith("text/html")
