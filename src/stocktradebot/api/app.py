@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from stocktradebot import __version__
 from stocktradebot.config import AppConfig, apply_config_patch, load_config
-from stocktradebot.data import backfill_market_data, market_data_status
+from stocktradebot.data import backfill_intraday_data, backfill_market_data, market_data_status
 from stocktradebot.execution import (
     approve_live_trading_run,
     arm_live_mode,
@@ -27,9 +27,20 @@ from stocktradebot.execution import (
     simulate_trading_day,
     simulation_status,
 )
-from stocktradebot.features import build_dataset_snapshot, dataset_status
+from stocktradebot.features import (
+    build_dataset_snapshot,
+    build_intraday_dataset_snapshot,
+    dataset_status,
+)
+from stocktradebot.features.intraday import intraday_dataset_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
-from stocktradebot.models import backtest_model, model_status, train_model
+from stocktradebot.models import (
+    backtest_model,
+    model_status,
+    train_model,
+    validate_intraday_research,
+)
+from stocktradebot.models.intraday import intraday_validation_status
 from stocktradebot.observability import read_operational_events, record_operational_event
 from stocktradebot.runtime import build_ui_url, collect_doctor_checks, runtime_status
 from stocktradebot.storage import (
@@ -290,6 +301,50 @@ def create_app(
         )
         return {"backfill_run": asdict(summary)}
 
+    @app.get("/api/v1/market-data/intraday/status")
+    def intraday_market_data_job_status(frequency: str | None = None) -> dict[str, object]:
+        snapshot = market_data_status(current_config())
+        latest_intraday_runs = cast(list[dict[str, object]], snapshot["latest_intraday_runs"])
+        intraday_validation_counts = cast(
+            dict[str, dict[str, int]],
+            snapshot["intraday_validation_counts"],
+        )
+        if frequency is None:
+            return {
+                "latest_intraday_runs": latest_intraday_runs,
+                "intraday_validation_counts": intraday_validation_counts,
+            }
+        return {
+            "latest_intraday_runs": [
+                item for item in latest_intraday_runs if item["frequency"] == frequency
+            ],
+            "intraday_validation_counts": intraday_validation_counts.get(frequency, {}),
+        }
+
+    @app.post("/api/v1/market-data/intraday/backfill")
+    def run_intraday_market_data_backfill(
+        frequency: str,
+        as_of: str | None = None,
+        lookback_days: int = 20,
+        symbol: list[str] | None = None,
+    ) -> dict[str, object]:
+        config = current_config()
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = backfill_intraday_data(
+                config,
+                frequency=frequency,
+                as_of_date=parsed_date,
+                lookback_days=lookback_days,
+                symbols=symbol,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"backfill_run": asdict(summary)}
+
     @app.get("/api/v1/models/datasets/latest")
     def latest_dataset_snapshot() -> dict[str, object]:
         snapshot = dataset_status(current_config())
@@ -379,6 +434,52 @@ def create_app(
             details={"snapshot_id": summary.snapshot_id, "row_count": summary.row_count},
         )
         return {"snapshot": asdict(summary)}
+
+    @app.get("/api/v1/models/intraday/datasets/latest")
+    def latest_intraday_dataset_snapshot(frequency: str | None = None) -> dict[str, object]:
+        snapshot = intraday_dataset_status(current_config(), frequency=frequency)
+        return {"snapshot": snapshot["latest_dataset_snapshot"]}
+
+    @app.post("/api/v1/models/intraday/datasets/build")
+    def build_intraday_dataset(
+        frequency: str,
+        as_of: str | None = None,
+    ) -> dict[str, object]:
+        config = current_config()
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = build_intraday_dataset_snapshot(
+                config, frequency=frequency, as_of_date=parsed_date
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"snapshot": asdict(summary)}
+
+    @app.get("/api/v1/models/intraday/validations/latest")
+    def latest_intraday_validation(frequency: str | None = None) -> dict[str, object]:
+        snapshot = intraday_validation_status(current_config(), frequency=frequency)
+        return {"validation": snapshot["latest_validation_run"]}
+
+    @app.post("/api/v1/models/intraday/validate")
+    def validate_intraday_model(
+        frequency: str,
+        as_of: str | None = None,
+    ) -> dict[str, object]:
+        config = current_config()
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = validate_intraday_research(
+                config, frequency=frequency, as_of_date=parsed_date
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"validation_run": asdict(summary)}
 
     @app.post("/api/v1/models/train")
     def train_model_endpoint(as_of: str | None = None) -> dict[str, object]:
