@@ -7,7 +7,11 @@ from typer.testing import CliRunner
 
 from stocktradebot.cli import app
 from stocktradebot.data.models import BackfillSummary
-from stocktradebot.execution import SimulationRunSummary
+from stocktradebot.execution import (
+    ModeTransitionSummary,
+    SimulationRunSummary,
+    TradingOperationSummary,
+)
 from stocktradebot.models import BacktestRunSummary, TrainingRunSummary
 
 runner = CliRunner()
@@ -199,25 +203,150 @@ def test_simulate_command_returns_simulation_summary(
     assert '"regime": "risk-on"' in result.stdout
 
 
-def test_paper_and_live_commands_report_disabled_state(
+def test_paper_command_reports_status_by_default(
     isolated_app_home: Path,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "stocktradebot.cli.simulation_status",
+        "stocktradebot.cli.paper_status",
         lambda *_args, **_kwargs: {
             "mode_state": {"current_mode": "simulation", "live_profile": "manual"},
             "active_freeze": None,
+            "paper_safe_days": 0,
         },
     )
 
-    paper_result = runner.invoke(app, ["paper"])
-    live_result = runner.invoke(app, ["live"])
+    result = runner.invoke(app, ["paper"])
 
-    assert paper_result.exit_code == 0
-    assert "Phase 6" in paper_result.stdout
-    assert live_result.exit_code == 0
-    assert "IBKR integration phases" in live_result.stdout
+    assert result.exit_code == 0
+    assert '"paper_safe_days": 0' in result.stdout
+
+
+def test_paper_command_runs_paper_flow(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    def fake_paper_trade_day(*args, **kwargs) -> SimulationRunSummary:
+        return SimulationRunSummary(
+            run_id=14,
+            mode="paper",
+            status="completed",
+            as_of_date=date(2026, 4, 15),
+            decision_date=date(2026, 4, 15),
+            model_version="linear-correlation-v1-test",
+            dataset_snapshot_id=9,
+            regime="neutral",
+            start_nav=100_000.0,
+            end_nav=100_200.0,
+            cash_start=100_000.0,
+            cash_end=79_500.0,
+            gross_exposure_target=0.2,
+            gross_exposure_actual=0.2,
+            turnover_ratio=0.12,
+            target_snapshot_id=31,
+            post_trade_snapshot_id=32,
+            order_count=2,
+            fill_count=2,
+            freeze_triggered=False,
+            artifact_path="artifacts/reports/paper.json",
+            metadata={"broker_sync_snapshot_ids": {"pre": 1, "post": 2}},
+        )
+
+    monkeypatch.setattr("stocktradebot.cli.paper_trade_day", fake_paper_trade_day)
+
+    result = runner.invoke(app, ["paper", "--run", "--as-of", "2026-04-15"])
+
+    assert result.exit_code == 0
+    assert '"mode": "paper"' in result.stdout
+    assert '"run_id": 14' in result.stdout
+
+
+def test_live_command_reports_status_by_default(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stocktradebot.cli.live_status",
+        lambda *_args, **_kwargs: {
+            "mode_state": {"current_mode": "simulation", "live_profile": "manual"},
+            "gates": {"manual": {"allowed": False}, "autonomous": {"allowed": False}},
+            "latest_approvals": [],
+        },
+    )
+
+    result = runner.invoke(app, ["live"])
+
+    assert result.exit_code == 0
+    assert '"current_mode": "simulation"' in result.stdout
+
+
+def test_live_arm_command_returns_mode_transition(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stocktradebot.cli.arm_live_mode",
+        lambda *_args, **_kwargs: ModeTransitionSummary(
+            previous_mode="paper",
+            current_mode="live-manual",
+            requested_mode="live-manual",
+            live_profile="manual",
+            status="armed",
+            armed=True,
+            reason="cli",
+            metadata={"checks": []},
+        ),
+    )
+
+    result = runner.invoke(app, ["live", "--arm"])
+
+    assert result.exit_code == 0
+    assert '"status": "armed"' in result.stdout
+    assert '"current_mode": "live-manual"' in result.stdout
+
+
+def test_live_run_and_approval_commands_return_operation_summaries(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stocktradebot.cli.live_status",
+        lambda *_args, **_kwargs: {
+            "mode_state": {"current_mode": "live-manual", "live_profile": "manual"},
+        },
+    )
+    monkeypatch.setattr(
+        "stocktradebot.cli.prepare_live_trading_day",
+        lambda *_args, **_kwargs: TradingOperationSummary(
+            action="prepare-live-run",
+            mode="live-manual",
+            status="pending-approval",
+            message="ready",
+            run_id=22,
+            approvals=(),
+            metadata={},
+        ),
+    )
+    monkeypatch.setattr(
+        "stocktradebot.cli.approve_live_trading_run",
+        lambda *_args, **_kwargs: TradingOperationSummary(
+            action="approve-live-run",
+            mode="live-manual",
+            status="completed",
+            message="approved",
+            run_id=22,
+            approvals=(),
+            metadata={},
+        ),
+    )
+
+    run_result = runner.invoke(app, ["live", "--run"])
+    approve_result = runner.invoke(app, ["live", "--run", "--approve-all", "--run-id", "22"])
+
+    assert run_result.exit_code == 0
+    assert '"status": "pending-approval"' in run_result.stdout
+    assert approve_result.exit_code == 0
+    assert '"status": "completed"' in approve_result.stdout
 
 
 def test_report_command_returns_model_status(
@@ -231,6 +360,14 @@ def test_report_command_returns_model_status(
     monkeypatch.setattr(
         "stocktradebot.cli.simulation_status",
         lambda *_args, **_kwargs: {"latest_run": {"id": 17}},
+    )
+    monkeypatch.setattr(
+        "stocktradebot.cli.paper_status",
+        lambda *_args, **_kwargs: {"latest_run": {"id": 18}},
+    )
+    monkeypatch.setattr(
+        "stocktradebot.cli.live_status",
+        lambda *_args, **_kwargs: {"latest_approvals": []},
     )
 
     result = runner.invoke(app, ["report"])
