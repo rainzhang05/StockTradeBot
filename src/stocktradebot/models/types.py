@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 
@@ -13,6 +13,14 @@ class DatasetArtifactRow:
     features: dict[str, float | None]
     labels: dict[str, float | None]
     fundamentals_available_at: str | None = None
+    decision_at: datetime | None = None
+    frequency: str = "daily"
+
+    @property
+    def decision_key(self) -> datetime:
+        if self.decision_at is not None:
+            return self.decision_at
+        return datetime.combine(self.trade_date, datetime.max.time()).replace(tzinfo=UTC)
 
 
 @dataclass(slots=True, frozen=True)
@@ -57,6 +65,7 @@ class BacktestRunSummary:
     average_positions: float
     artifact_path: str
     metadata: dict[str, Any]
+    frequency: str = "daily"
 
 
 @dataclass(slots=True, frozen=True)
@@ -73,6 +82,7 @@ class ValidationRunSummary:
     promotion_ready: bool
     promotion_reasons: tuple[str, ...]
     metadata: dict[str, Any]
+    frequency: str = "daily"
 
 
 @dataclass(slots=True, frozen=True)
@@ -90,4 +100,20 @@ class TrainingRunSummary:
     promotion_reasons: tuple[str, ...]
     metrics: dict[str, float]
     benchmark_metrics: dict[str, float]
+    metadata: dict[str, Any]
+    frequency: str = "daily"
+
+
+@dataclass(slots=True, frozen=True)
+class IntradayValidationSummary:
+    run_id: int
+    dataset_snapshot_id: int
+    frequency: str
+    feature_set_version: str
+    label_version: str
+    artifact_path: str
+    fold_count: int
+    promotion_ready: bool
+    promotion_reasons: tuple[str, ...]
+    metrics: dict[str, float]
     metadata: dict[str, Any]
