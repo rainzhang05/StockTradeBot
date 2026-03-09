@@ -333,6 +333,191 @@ class ModelTrainingConfig:
 
 
 @dataclass(slots=True)
+class PortfolioConfig:
+    max_position_weight: float = 0.10
+    sector_exposure_soft_cap: float = 0.30
+    turnover_soft_cap: float = 0.25
+    turnover_penalty: float = 0.20
+    minimum_conviction_score: float = 0.0
+    risk_on_target_positions: int = 10
+    neutral_target_positions: int = 6
+    risk_off_target_positions: int = 3
+    risk_on_gross_exposure: float = 1.0
+    neutral_gross_exposure: float = 0.70
+    risk_off_gross_exposure: float = 0.35
+    risk_off_defensive_allocation: float = 0.20
+    defensive_etf_symbol: str | None = None
+    symbol_sectors: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> PortfolioConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        defensive_etf_symbol = data.get("defensive_etf_symbol", defaults.defensive_etf_symbol)
+        symbol_sectors = {
+            str(symbol).upper(): str(sector)
+            for symbol, sector in data.get("symbol_sectors", {}).items()
+        }
+        return cls(
+            max_position_weight=float(
+                data.get("max_position_weight", defaults.max_position_weight)
+            ),
+            sector_exposure_soft_cap=float(
+                data.get("sector_exposure_soft_cap", defaults.sector_exposure_soft_cap)
+            ),
+            turnover_soft_cap=float(data.get("turnover_soft_cap", defaults.turnover_soft_cap)),
+            turnover_penalty=float(data.get("turnover_penalty", defaults.turnover_penalty)),
+            minimum_conviction_score=float(
+                data.get("minimum_conviction_score", defaults.minimum_conviction_score)
+            ),
+            risk_on_target_positions=int(
+                data.get("risk_on_target_positions", defaults.risk_on_target_positions)
+            ),
+            neutral_target_positions=int(
+                data.get("neutral_target_positions", defaults.neutral_target_positions)
+            ),
+            risk_off_target_positions=int(
+                data.get("risk_off_target_positions", defaults.risk_off_target_positions)
+            ),
+            risk_on_gross_exposure=float(
+                data.get("risk_on_gross_exposure", defaults.risk_on_gross_exposure)
+            ),
+            neutral_gross_exposure=float(
+                data.get("neutral_gross_exposure", defaults.neutral_gross_exposure)
+            ),
+            risk_off_gross_exposure=float(
+                data.get("risk_off_gross_exposure", defaults.risk_off_gross_exposure)
+            ),
+            risk_off_defensive_allocation=float(
+                data.get(
+                    "risk_off_defensive_allocation",
+                    defaults.risk_off_defensive_allocation,
+                )
+            ),
+            defensive_etf_symbol=(
+                None if defensive_etf_symbol is None else str(defensive_etf_symbol).upper()
+            ),
+            symbol_sectors=symbol_sectors,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_position_weight": self.max_position_weight,
+            "sector_exposure_soft_cap": self.sector_exposure_soft_cap,
+            "turnover_soft_cap": self.turnover_soft_cap,
+            "turnover_penalty": self.turnover_penalty,
+            "minimum_conviction_score": self.minimum_conviction_score,
+            "risk_on_target_positions": self.risk_on_target_positions,
+            "neutral_target_positions": self.neutral_target_positions,
+            "risk_off_target_positions": self.risk_off_target_positions,
+            "risk_on_gross_exposure": self.risk_on_gross_exposure,
+            "neutral_gross_exposure": self.neutral_gross_exposure,
+            "risk_off_gross_exposure": self.risk_off_gross_exposure,
+            "risk_off_defensive_allocation": self.risk_off_defensive_allocation,
+            "defensive_etf_symbol": self.defensive_etf_symbol,
+            "symbol_sectors": self.symbol_sectors,
+        }
+
+
+@dataclass(slots=True)
+class RiskConfig:
+    daily_loss_cap: float = 0.03
+    drawdown_freeze: float = 0.20
+    abnormal_slippage_bps: float = 50.0
+    abnormal_slippage_spread_multiple: float = 3.0
+    freeze_on_open_incidents: bool = True
+    kill_switch_enabled: bool = True
+    allow_research_models_in_simulation: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> RiskConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        return cls(
+            daily_loss_cap=float(data.get("daily_loss_cap", defaults.daily_loss_cap)),
+            drawdown_freeze=float(data.get("drawdown_freeze", defaults.drawdown_freeze)),
+            abnormal_slippage_bps=float(
+                data.get("abnormal_slippage_bps", defaults.abnormal_slippage_bps)
+            ),
+            abnormal_slippage_spread_multiple=float(
+                data.get(
+                    "abnormal_slippage_spread_multiple",
+                    defaults.abnormal_slippage_spread_multiple,
+                )
+            ),
+            freeze_on_open_incidents=bool(
+                data.get("freeze_on_open_incidents", defaults.freeze_on_open_incidents)
+            ),
+            kill_switch_enabled=bool(data.get("kill_switch_enabled", defaults.kill_switch_enabled)),
+            allow_research_models_in_simulation=bool(
+                data.get(
+                    "allow_research_models_in_simulation",
+                    defaults.allow_research_models_in_simulation,
+                )
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "daily_loss_cap": self.daily_loss_cap,
+            "drawdown_freeze": self.drawdown_freeze,
+            "abnormal_slippage_bps": self.abnormal_slippage_bps,
+            "abnormal_slippage_spread_multiple": self.abnormal_slippage_spread_multiple,
+            "freeze_on_open_incidents": self.freeze_on_open_incidents,
+            "kill_switch_enabled": self.kill_switch_enabled,
+            "allow_research_models_in_simulation": self.allow_research_models_in_simulation,
+        }
+
+
+@dataclass(slots=True)
+class ExecutionConfig:
+    default_mode: str = "simulation"
+    live_profile: str = "manual"
+    commission_bps: float = 1.0
+    base_slippage_bps: float = 5.0
+    max_participation_rate: float = 0.05
+    stale_data_max_age_days: int = 3
+    partial_fill_enabled: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None = None) -> ExecutionConfig:
+        defaults = cls()
+        if data is None:
+            return defaults
+
+        return cls(
+            default_mode=str(data.get("default_mode", defaults.default_mode)),
+            live_profile=str(data.get("live_profile", defaults.live_profile)),
+            commission_bps=float(data.get("commission_bps", defaults.commission_bps)),
+            base_slippage_bps=float(data.get("base_slippage_bps", defaults.base_slippage_bps)),
+            max_participation_rate=float(
+                data.get("max_participation_rate", defaults.max_participation_rate)
+            ),
+            stale_data_max_age_days=int(
+                data.get("stale_data_max_age_days", defaults.stale_data_max_age_days)
+            ),
+            partial_fill_enabled=bool(
+                data.get("partial_fill_enabled", defaults.partial_fill_enabled)
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "default_mode": self.default_mode,
+            "live_profile": self.live_profile,
+            "commission_bps": self.commission_bps,
+            "base_slippage_bps": self.base_slippage_bps,
+            "max_participation_rate": self.max_participation_rate,
+            "stale_data_max_age_days": self.stale_data_max_age_days,
+            "partial_fill_enabled": self.partial_fill_enabled,
+        }
+
+
+@dataclass(slots=True)
 class AppConfig:
     app_home: Path
     config_path: Path
@@ -349,6 +534,9 @@ class AppConfig:
     )
     universe: UniverseConfig = field(default_factory=UniverseConfig)
     model_training: ModelTrainingConfig = field(default_factory=ModelTrainingConfig)
+    portfolio: PortfolioConfig = field(default_factory=PortfolioConfig)
+    risk: RiskConfig = field(default_factory=RiskConfig)
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
 
     @classmethod
     def default(cls, app_home: Path | None = None) -> AppConfig:
@@ -382,6 +570,9 @@ class AppConfig:
             ),
             universe=UniverseConfig.from_dict(data.get("universe")),
             model_training=ModelTrainingConfig.from_dict(data.get("model_training")),
+            portfolio=PortfolioConfig.from_dict(data.get("portfolio")),
+            risk=RiskConfig.from_dict(data.get("risk")),
+            execution=ExecutionConfig.from_dict(data.get("execution")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -397,6 +588,9 @@ class AppConfig:
             "fundamentals_provider": self.fundamentals_provider.to_dict(),
             "universe": self.universe.to_dict(),
             "model_training": self.model_training.to_dict(),
+            "portfolio": self.portfolio.to_dict(),
+            "risk": self.risk.to_dict(),
+            "execution": self.execution.to_dict(),
         }
 
     def database_url(self) -> str:
