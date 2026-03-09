@@ -98,6 +98,8 @@ The following commands are part of the target stable interface:
   - runs model training, validation, and registry publication for a specified dataset/feature version
 - `stocktradebot backtest`
   - runs event-driven backtests and emits reproducible reports
+- `stocktradebot simulate`
+  - runs the Phase 5 simulation adapter, persists target portfolios, order intents, fills, and risk results
 - `stocktradebot paper`
   - arms or starts paper-trading workflows against IBKR paper endpoints
 - `stocktradebot live`
