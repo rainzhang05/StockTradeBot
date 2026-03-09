@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from stocktradebot.cli import app
 from stocktradebot.data.models import BackfillSummary
+from stocktradebot.execution import SimulationRunSummary
 from stocktradebot.models import BacktestRunSummary, TrainingRunSummary
 
 runner = CliRunner()
@@ -159,6 +160,66 @@ def test_backtest_command_returns_backtest_summary(
     assert '"mode": "static-model"' in result.stdout
 
 
+def test_simulate_command_returns_simulation_summary(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    def fake_simulate_trading_day(*args, **kwargs) -> SimulationRunSummary:
+        return SimulationRunSummary(
+            run_id=13,
+            mode="simulation",
+            status="completed",
+            as_of_date=date(2026, 4, 15),
+            decision_date=date(2026, 4, 15),
+            model_version="linear-correlation-v1-test",
+            dataset_snapshot_id=9,
+            regime="risk-on",
+            start_nav=100_000.0,
+            end_nav=99_975.0,
+            cash_start=100_000.0,
+            cash_end=79_980.0,
+            gross_exposure_target=0.2,
+            gross_exposure_actual=0.199,
+            turnover_ratio=0.10,
+            target_snapshot_id=21,
+            post_trade_snapshot_id=22,
+            order_count=2,
+            fill_count=2,
+            freeze_triggered=False,
+            artifact_path="artifacts/reports/simulation.json",
+            metadata={"risk_checks": {"pretrade": [], "posttrade": []}},
+        )
+
+    monkeypatch.setattr("stocktradebot.cli.simulate_trading_day", fake_simulate_trading_day)
+
+    result = runner.invoke(app, ["simulate", "--as-of", "2026-04-15"])
+
+    assert result.exit_code == 0
+    assert '"run_id": 13' in result.stdout
+    assert '"regime": "risk-on"' in result.stdout
+
+
+def test_paper_and_live_commands_report_disabled_state(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stocktradebot.cli.simulation_status",
+        lambda *_args, **_kwargs: {
+            "mode_state": {"current_mode": "simulation", "live_profile": "manual"},
+            "active_freeze": None,
+        },
+    )
+
+    paper_result = runner.invoke(app, ["paper"])
+    live_result = runner.invoke(app, ["live"])
+
+    assert paper_result.exit_code == 0
+    assert "Phase 6" in paper_result.stdout
+    assert live_result.exit_code == 0
+    assert "IBKR integration phases" in live_result.stdout
+
+
 def test_report_command_returns_model_status(
     isolated_app_home: Path,
     monkeypatch,
@@ -167,8 +228,13 @@ def test_report_command_returns_model_status(
         "stocktradebot.cli.model_status",
         lambda *_args, **_kwargs: {"latest_model": {"version": "linear-correlation-v1-test"}},
     )
+    monkeypatch.setattr(
+        "stocktradebot.cli.simulation_status",
+        lambda *_args, **_kwargs: {"latest_run": {"id": 17}},
+    )
 
     result = runner.invoke(app, ["report"])
 
     assert result.exit_code == 0
     assert '"linear-correlation-v1-test"' in result.stdout
+    assert '"latest_run": {' in result.stdout
