@@ -3,14 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def repository_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+def repository_root(module_file: Path | None = None) -> Path:
+    file_path = Path(module_file or __file__).resolve()
+    return file_path.parents[3]
 
 
-def find_frontend_dist() -> Path | None:
-    dist_path = repository_root() / "frontend" / "dist"
-    if (dist_path / "index.html").exists():
-        return dist_path
+def find_frontend_dist(module_file: Path | None = None) -> Path | None:
+    file_path = Path(module_file or __file__).resolve()
+    packaged_dist = file_path.parent / "dist"
+    if (packaged_dist / "index.html").exists():
+        return packaged_dist
+
+    repository_dist = repository_root(file_path) / "frontend" / "dist"
+    if (repository_dist / "index.html").exists():
+        return repository_dist
     return None
 
 
@@ -49,7 +55,7 @@ def render_placeholder_html() -> str:
   </head>
   <body>
     <main>
-      <h1>StockTradeBot Phase 7</h1>
+      <h1>StockTradeBot Phase 8</h1>
       <p>
         The backend is running, but the built frontend bundle is not present yet.
         Build the operator dashboard from <code>frontend/</code> and the Python app will
@@ -60,7 +66,7 @@ def render_placeholder_html() -> str:
         <p>
           FastAPI runtime, SQLite bootstrap, market-data backfill, dataset generation,
           model training, walk-forward validation, backtests, simulation trading, IBKR
-          paper mode, live-manual approvals, and the Phase 7 operator UI.
+          paper mode, live-manual approvals, and the Phase 8 operator UI.
         </p>
       </div>
       <div class="card">
