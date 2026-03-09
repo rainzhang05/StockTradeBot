@@ -198,7 +198,10 @@ Allowed transitions:
 
 - `simulation -> paper`
 - `paper -> simulation`
+- `live-manual -> simulation`
 - `paper -> live-manual`
+- `live-autonomous -> paper`
+- `live-autonomous -> simulation`
 - `live-manual -> paper`
 - `live-manual -> live-autonomous`
 - `live-autonomous -> live-manual`
