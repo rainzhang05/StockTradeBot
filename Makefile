@@ -52,7 +52,16 @@ frontend-e2e:
 	cd frontend && npm run e2e
 
 package-check:
+	cd frontend && npm run build
 	$(PYTHON) -m build
+	TMPDIR=$$(mktemp -d) && \
+	$(PYTHON) -m venv $$TMPDIR/venv && \
+	$$TMPDIR/venv/bin/python -m pip install --upgrade pip && \
+	$$TMPDIR/venv/bin/python -m pip install dist/*.whl httpx && \
+	$$TMPDIR/venv/bin/stocktradebot init --app-home $$TMPDIR/app && \
+	$$TMPDIR/venv/bin/stocktradebot doctor --app-home $$TMPDIR/app && \
+	APP_HOME=$$TMPDIR/app $$TMPDIR/venv/bin/python -c "import os; from pathlib import Path; from fastapi.testclient import TestClient; from stocktradebot.api import create_app; from stocktradebot.config import initialize_config; config = initialize_config(Path(os.environ['APP_HOME'])); client = TestClient(create_app(config)); html = client.get('/').text; assert 'Frontend Build Missing' not in html; assert 'id=\"root\"' in html" && \
+	rm -rf $$TMPDIR
 
 check:
 	$(MAKE) backend-quality
