@@ -54,6 +54,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - packaged the built frontend into release artifacts and updated runtime asset discovery so installed builds serve the operator UI instead of the placeholder page
 - added structured JSONL operational logging, API exposure for recent logs, and a System-screen operational log feed
 - hardened package verification to build the frontend, build the wheel, install it in isolation, and smoke-test the installed runtime UI path
+- fixed editable-install metadata generation so backend workflows and fresh source installs no longer require `frontend/dist` to exist before `pip install -e ".[dev]"`
 - added operator guide, troubleshooting guidance, and an explicit release process for the local-first shipped workflow
 
 ## Subsystem Status Matrix
@@ -112,10 +113,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 - frontend browser E2E: `make frontend-e2e` passed locally
 - package build: `make package-check` passed locally
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, and verify the installed runtime serves the bundled UI
+- editable install smoke: passed locally from a fresh source copy with `frontend/dist` removed, using `python -m pip install -e ".[dev]"` under Python 3.14
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
 - backend-served browser smoke: passed locally against `stocktradebot --app-home /tmp/stocktradebot-phase7.Xt2YBf --host 127.0.0.1 --port 8011 --no-browser`, verified in Chromium and captured to `output/playwright/phase7-backend-ui.png`
 - Phase 7 integration verification: full pytest suite passed locally, including paper execution, live-manual preparation and approval, API control surfaces, config mutation, mode transitions, and browser-driven operator workflows
 
 ## Last Updated Because
 
-- 2026-03-09: completed Phase 8 hardening for packaged frontend serving, operational logs, release verification, and operator/release documentation
+- 2026-03-09: fixed Hatch editable-install packaging so backend workflows succeed without a prebuilt `frontend/dist` while preserving bundled frontend release artifacts
