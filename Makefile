@@ -4,7 +4,7 @@ RUFF ?= $(VENV)/bin/ruff
 MYPY ?= $(VENV)/bin/mypy
 PYTEST ?= $(VENV)/bin/pytest
 
-.PHONY: install frontend-install fmt lint typecheck test frontend-lint frontend-test frontend-build backend-quality backend-tests frontend-check package-check check
+.PHONY: install frontend-install fmt lint typecheck test frontend-lint frontend-test frontend-build frontend-e2e backend-quality backend-tests frontend-check package-check check
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -46,6 +46,11 @@ frontend-check:
 	cd frontend && npm run test
 	cd frontend && npm run build
 
+frontend-e2e:
+	cd frontend && npm run build
+	cd frontend && npx playwright install chromium
+	cd frontend && npm run e2e
+
 package-check:
 	$(PYTHON) -m build
 
@@ -53,4 +58,5 @@ check:
 	$(MAKE) backend-quality
 	$(MAKE) backend-tests
 	$(MAKE) frontend-check
+	$(MAKE) frontend-e2e
 	$(MAKE) package-check
