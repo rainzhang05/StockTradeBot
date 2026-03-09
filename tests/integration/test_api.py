@@ -15,6 +15,7 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     health = client.get("/api/v1/health")
     setup = client.get("/api/v1/setup")
     status = client.get("/api/v1/system/status")
+    mode = client.get("/api/v1/system/mode")
     market_data = client.get("/api/v1/market-data/status")
     incidents = client.get("/api/v1/market-data/incidents")
     universe = client.get("/api/v1/market-data/universe/latest")
@@ -24,6 +25,11 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     latest_model = client.get("/api/v1/models/latest")
     latest_validation = client.get("/api/v1/models/validations/latest")
     latest_backtest = client.get("/api/v1/models/backtests/latest")
+    risk = client.get("/api/v1/risk/status")
+    portfolio = client.get("/api/v1/portfolio/status")
+    target = client.get("/api/v1/portfolio/targets/latest")
+    orders = client.get("/api/v1/orders/latest")
+    fills = client.get("/api/v1/fills/latest")
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
@@ -31,6 +37,8 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert setup.json()["initialized"] is True
     assert status.status_code == 200
     assert status.json()["mode"] == "simulation"
+    assert mode.status_code == 200
+    assert mode.json()["mode_state"]["current_mode"] == "simulation"
     assert health.json()["ui_url"] == "http://127.0.0.1:8000"
     assert market_data.status_code == 200
     assert market_data.json()["latest_run"] is None
@@ -51,6 +59,16 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert latest_validation.json()["validation"] is None
     assert latest_backtest.status_code == 200
     assert latest_backtest.json()["backtest"] is None
+    assert risk.status_code == 200
+    assert risk.json()["active_freeze"] is None
+    assert portfolio.status_code == 200
+    assert portfolio.json()["latest_run"] is None
+    assert target.status_code == 200
+    assert target.json()["snapshot"] is None
+    assert orders.status_code == 200
+    assert orders.json()["items"] == []
+    assert fills.status_code == 200
+    assert fills.json()["items"] == []
 
 
 def test_api_health_reports_runtime_override(isolated_app_home) -> None:
@@ -107,6 +125,7 @@ def test_model_train_and_backtest_endpoints_require_research_prerequisites(
 
     train_response = client.post("/api/v1/models/train", params={"as_of": "2026-03-09"})
     backtest_response = client.post("/api/v1/models/backtests/run")
+    simulate_response = client.post("/api/v1/portfolio/simulations/run")
 
     assert train_response.status_code == 409
     assert (
@@ -115,3 +134,8 @@ def test_model_train_and_backtest_endpoints_require_research_prerequisites(
     )
     assert backtest_response.status_code == 409
     assert backtest_response.json()["detail"] == "No trained model is available. Run train first."
+    assert simulate_response.status_code == 409
+    assert (
+        simulate_response.json()["detail"]
+        == "No universe snapshots are available. Run backfill first."
+    )
