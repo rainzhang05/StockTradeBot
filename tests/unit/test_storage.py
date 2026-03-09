@@ -20,7 +20,7 @@ def test_initialize_database_runs_migrations(isolated_app_home: Path) -> None:
 
     assert database_exists(config)
     assert database_is_reachable(config)
-    assert read_app_state(config, "schema_version") == "phase2"
+    assert read_app_state(config, "schema_version") == "phase3"
 
 
 def test_app_state_and_audit_events_can_be_written(isolated_app_home: Path) -> None:
