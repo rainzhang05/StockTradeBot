@@ -6,6 +6,7 @@ from pathlib import Path
 from stocktradebot.config import AppConfig, initialize_config, load_config
 from stocktradebot.data import market_data_status
 from stocktradebot.data.providers import build_provider_registry
+from stocktradebot.execution import simulation_status
 from stocktradebot.features import dataset_status
 from stocktradebot.models import model_status
 from stocktradebot.storage import (
@@ -119,15 +120,20 @@ def runtime_status(app_home: Path | None = None) -> dict[str, object]:
     config = load_config(app_home)
     checks = collect_doctor_checks(config)
     has_database = database_exists(config) and database_is_reachable(config)
+    trading = simulation_status(config) if has_database else None
+    current_mode = config.execution.default_mode
+    if trading is not None and trading["mode_state"] is not None:
+        current_mode = str(trading["mode_state"]["current_mode"])
     return {
         "app_home": str(config.app_home),
         "config_path": str(config.config_path),
         "database_path": str(config.database_path),
-        "mode": "simulation",
+        "mode": current_mode,
         "initialized": config.config_path.exists() and database_exists(config),
         "schema_version": read_app_state(config, "schema_version"),
         "checks": [asdict(check) for check in checks],
         "market_data": market_data_status(config) if has_database else None,
         "datasets": dataset_status(config) if has_database else None,
         "models": model_status(config) if has_database else None,
+        "simulation": trading,
     }
