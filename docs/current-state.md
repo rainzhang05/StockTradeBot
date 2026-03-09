@@ -6,12 +6,12 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - Date: 2026-03-09
 - Branch: `main`
-- Repository state: Phase 6 IBKR paper/live boundary implemented
-- Application code: package, CLI, API, runtime, storage, frontend workspace, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, and live-autonomous gating created
-- CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend checks, and package verification
-- Tests: backend and frontend verification suites created through Phase 6
+- Repository state: Phase 7 operator UI implemented
+- Application code: package, CLI, API, runtime, storage, operator frontend, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
+- CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, and package verification
+- Tests: backend and frontend verification suites created through Phase 7
 - Database schema: Phase 6 SQLite schema and Alembic migrations created
-- Frontend: React/Vite placeholder app created under `frontend/` and served by the Python runtime when built
+- Frontend: React/Vite operator dashboard created under `frontend/` and served by the Python runtime when built
 
 ## Completed Work
 
@@ -44,6 +44,13 @@ This file describes the repository as it exists now. Update it at the end of eve
 - added broker, paper, and live API endpoints plus runtime/doctor broker health reporting
 - updated promotion-gate evaluation so paper safe-day history now comes from persisted paper-run outcomes rather than a hard-coded placeholder
 - added Phase 6 broker integration tests for paper execution, live-manual approvals, live-autonomous blocking, IBKR client parsing, and CLI/API control surfaces
+- resolved the mode-state-machine documentation conflict so live modes can retreat directly to safer modes
+- added validated config patch persistence for the operator setup flow
+- added Phase 7 API endpoints for operator workspace aggregation, audit-feed retrieval, config updates, system mode transitions, and market-data backfill control
+- added simulation retreat support from live-manual and live-autonomous plus a guard that blocks leaving frozen mode while an active freeze still exists
+- replaced the frontend placeholder with a full operator UI covering setup, dashboard, portfolio, orders, research, data, and system screens
+- added browser-tested manual approval, research, setup, and mode-control workflows in a dedicated frontend E2E lane
+- updated the fallback frontend placeholder and README to describe the Phase 7 operator UI
 
 ## Subsystem Status Matrix
 
@@ -58,9 +65,9 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Models/backtesting | Complete for Phase 4 | Deterministic baseline training, walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
-| Frontend/UI | Complete for Phase 1 | React/Vite placeholder exists in `frontend/`; production dashboard not started |
-| Tests/coverage | Complete for Phase 6 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest |
-| GitHub Actions | Complete for Phase 4 | Focused workflows cover backend quality, backend tests, frontend checks, and package build |
+| Frontend/UI | Complete for Phase 7 | Operator dashboard, setup flow, control screens, and live approval UX are implemented in `frontend/` |
+| Tests/coverage | Complete for Phase 7 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E |
+| GitHub Actions | Complete for Phase 7 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build |
 
 ## Active Constraints
 
@@ -80,29 +87,30 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Known Gaps
 
-- the frontend is still a placeholder shell rather than the operator dashboard
-- live-manual approvals currently exist only through CLI and API flows; the dedicated operator dashboard is not implemented yet
 - live-autonomous execution support exists, but a fresh repository will still block it because the stricter safe-day requirements are intentionally unmet
 - the IBKR adapter assumes a local authenticated Client Portal Gateway and does not yet manage gateway startup or login orchestration
 - the built-in stock candidate seed list is a bootstrap set rather than a full ~300-name universe; wider coverage depends on configuring more candidate symbols
 - background scheduling is still limited to the skeleton runtime; backfill, training, backtests, and simulations are currently CLI/API driven rather than scheduler-driven
+- the setup UI can update runtime paths inside the current app home, but relocating the app home root itself still depends on the CLI or `STOCKTRADEBOT_HOME`
 
 ## Next Milestone
 
-- start Phase 7 from `docs/roadmap.md`
-- build the operator dashboard for setup, broker health, paper/live controls, approvals, and risk review
+- start Phase 8 from `docs/roadmap.md`
+- harden packaging, operator documentation, and release readiness around the now-complete local operator experience
 
 ## Verification Status
 
 - documentation consistency review: completed manually
 - file/path validation for referenced docs: completed for `docs/README.md` links
 - backend checks: `make backend-quality` and `make backend-tests` passed locally
-- coverage check: passed locally at `82.10%`
+- coverage check: passed locally at `82.13%`
 - frontend checks: `npm run lint`, `npm run test -- --run`, and `npm run build` passed locally in `frontend/`
+- frontend browser E2E: `make frontend-e2e` passed locally
 - package build: `make package-check` passed locally
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
-- Phase 6 integration verification: full pytest suite passed locally, including paper execution, live-manual preparation and approval, API control surfaces, and IBKR client parsing
+- backend-served browser smoke: passed locally against `stocktradebot --app-home /tmp/stocktradebot-phase7.Xt2YBf --host 127.0.0.1 --port 8011 --no-browser`, verified in Chromium and captured to `output/playwright/phase7-backend-ui.png`
+- Phase 7 integration verification: full pytest suite passed locally, including paper execution, live-manual preparation and approval, API control surfaces, config mutation, mode transitions, and browser-driven operator workflows
 
 ## Last Updated Because
 
-- 2026-03-09: completed the Phase 6 broker integration, paper execution flow, live-manual approvals, live-autonomous gating, and related verification updates
+- 2026-03-09: completed the Phase 7 operator dashboard, setup/config API flow, mode-control UI, frontend E2E coverage, and final verification updates
