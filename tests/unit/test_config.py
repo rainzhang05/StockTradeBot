@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stocktradebot.config import AppConfig, initialize_config, load_config, resolve_app_home
+import pytest
+
+from stocktradebot.config import (
+    AppConfig,
+    apply_config_patch,
+    initialize_config,
+    load_config,
+    resolve_app_home,
+)
 
 
 def test_resolve_app_home_prefers_explicit_path(tmp_path: Path) -> None:
@@ -67,3 +75,41 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     assert loaded.broker.live_account_id == "U1234567"
     assert loaded.broker.gateway.base_url == "https://127.0.0.1:5000/v1/api"
     assert loaded.broker.live_manual_min_paper_days == 45
+
+
+def test_apply_config_patch_updates_nested_settings(isolated_app_home: Path) -> None:
+    config = initialize_config(isolated_app_home)
+
+    updated = apply_config_patch(
+        config,
+        {
+            "timezone": "UTC",
+            "data_providers": {
+                "secondary_provider": "alpha_vantage",
+                "alpha_vantage": {"enabled": True},
+            },
+            "fundamentals_provider": {"enabled": True, "user_agent": "StockTradeBot/phase7"},
+            "broker": {
+                "enabled": True,
+                "paper_account_id": "DU1234567",
+                "live_account_id": "U1234567",
+            },
+        },
+    )
+
+    reloaded = load_config(isolated_app_home)
+
+    assert updated.timezone == "UTC"
+    assert updated.data_providers.secondary_provider == "alpha_vantage"
+    assert updated.data_providers.alpha_vantage.enabled is True
+    assert updated.fundamentals_provider.user_agent == "StockTradeBot/phase7"
+    assert reloaded.broker.enabled is True
+    assert reloaded.broker.paper_account_id == "DU1234567"
+    assert reloaded.broker.live_account_id == "U1234567"
+
+
+def test_apply_config_patch_rejects_unknown_fields(isolated_app_home: Path) -> None:
+    config = initialize_config(isolated_app_home)
+
+    with pytest.raises(KeyError, match="Unsupported config field: invalid_field"):
+        apply_config_patch(config, {"invalid_field": True})
