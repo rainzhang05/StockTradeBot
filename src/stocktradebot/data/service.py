@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from stocktradebot.config import AppConfig
 from stocktradebot.data.canonicalize import canonicalize_daily_bars
+from stocktradebot.data.fundamentals import backfill_fundamentals
 from stocktradebot.data.models import (
     BackfillSummary,
     CanonicalBarRecord,
@@ -18,8 +19,12 @@ from stocktradebot.data.models import (
     ProviderHistoryPayload,
     UniverseSnapshotRecord,
 )
-from stocktradebot.data.providers import build_provider_registry
-from stocktradebot.data.providers.base import DailyHistoryProvider, ProviderError
+from stocktradebot.data.providers import build_fundamentals_provider, build_provider_registry
+from stocktradebot.data.providers.base import (
+    DailyHistoryProvider,
+    FundamentalsProvider,
+    ProviderError,
+)
 from stocktradebot.data.raw import persist_raw_payload
 from stocktradebot.data.universe import (
     build_universe_snapshot,
@@ -32,6 +37,7 @@ from stocktradebot.storage import (
     CorporateActionObservation,
     DailyBarObservation,
     DataQualityIncident,
+    FundamentalObservation,
     ProviderPayload,
     UniverseSnapshot,
     UniverseSnapshotMember,
@@ -55,6 +61,11 @@ def _normalize_symbols(symbols: Sequence[str]) -> tuple[str, ...]:
 
 def _default_symbol_set(config: AppConfig) -> tuple[str, ...]:
     return _normalize_symbols((*resolve_stock_candidates(config), *resolve_curated_etfs(config)))
+
+
+def _fundamentals_symbol_set(config: AppConfig, symbols: Sequence[str]) -> tuple[str, ...]:
+    curated_etfs = set(resolve_curated_etfs(config))
+    return tuple(symbol for symbol in _normalize_symbols(symbols) if symbol not in curated_etfs)
 
 
 def _resolve_provider_list(
@@ -275,6 +286,7 @@ def backfill_market_data(
     lookback_days: int = 120,
     symbols: Sequence[str] | None = None,
     providers: Sequence[DailyHistoryProvider] | None = None,
+    fundamentals_provider: FundamentalsProvider | None = None,
     primary_provider: str | None = None,
     secondary_provider: str | None = None,
 ) -> BackfillSummary:
@@ -292,6 +304,11 @@ def backfill_market_data(
         secondary_provider=secondary_provider,
     )
     provider_names = tuple(provider.name for provider in selected_providers)
+    resolved_fundamentals_provider = (
+        fundamentals_provider
+        if fundamentals_provider is not None
+        else build_fundamentals_provider(config)
+    )
 
     engine = create_db_engine(config)
     try:
@@ -333,6 +350,16 @@ def backfill_market_data(
                     observation_count += _store_payload(session, config, payload)[1]
                     session.commit()
 
+            fundamentals_payload_count, fundamentals_observation_count, fundamentals_errors = (
+                backfill_fundamentals(
+                    session,
+                    config,
+                    symbols=_fundamentals_symbol_set(config, selected_symbols),
+                    provider=resolved_fundamentals_provider,
+                )
+            )
+            fetch_errors.extend(fundamentals_errors)
+
             observations = _load_observations(
                 session,
                 symbols=selected_symbols,
@@ -368,9 +395,16 @@ def backfill_market_data(
             summary_payload = {
                 "payload_count": payload_count,
                 "observation_count": observation_count,
+                "fundamentals_payload_count": fundamentals_payload_count,
+                "fundamentals_observation_count": fundamentals_observation_count,
                 "canonical_count": len(canonical_bars),
                 "incident_count": len(incidents),
                 "providers_used": provider_names,
+                "fundamentals_provider": (
+                    resolved_fundamentals_provider.name
+                    if resolved_fundamentals_provider is not None
+                    else None
+                ),
                 "validation_counts": validation_counts,
                 "fetch_errors": fetch_errors,
                 "universe_snapshot_id": snapshot_id,
@@ -393,6 +427,8 @@ def backfill_market_data(
                 secondary_provider=secondary_name,
                 payload_count=payload_count,
                 observation_count=observation_count,
+                fundamentals_payload_count=fundamentals_payload_count,
+                fundamentals_observation_count=fundamentals_observation_count,
                 canonical_count=len(canonical_bars),
                 incident_count=len(incidents),
                 universe_snapshot_id=snapshot_id,
@@ -418,6 +454,7 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             "latest_run": None,
             "latest_universe_snapshot": None,
             "validation_counts": {},
+            "fundamentals_observation_count": 0,
             "recent_incidents": [],
         }
 
@@ -437,6 +474,9 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
                     func.count(),
                 ).group_by(CanonicalDailyBar.validation_tier)
             ).all()
+            fundamentals_count = session.scalar(
+                select(func.count()).select_from(FundamentalObservation)
+            )
             recent_incidents = session.scalars(
                 select(DataQualityIncident)
                 .order_by(DataQualityIncident.created_at.desc(), DataQualityIncident.id.desc())
@@ -477,6 +517,7 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             else None
         ),
         "validation_counts": {tier: count for tier, count in validation_rows},
+        "fundamentals_observation_count": fundamentals_count or 0,
         "recent_incidents": [
             {
                 "id": incident.id,
