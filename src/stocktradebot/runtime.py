@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from stocktradebot.broker import broker_status
 from stocktradebot.config import AppConfig, initialize_config, load_config
 from stocktradebot.data import market_data_status
 from stocktradebot.data.providers import build_provider_registry
@@ -64,6 +65,10 @@ def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
     fundamentals_ready = (
         not config.fundamentals_provider.enabled
     ) or config.fundamentals_provider.resolved_user_agent() is not None
+    broker_snapshot = broker_status(config)
+    broker_ready = not config.broker.enabled or (
+        broker_snapshot["connectivity"] is not None and bool(broker_snapshot["connectivity"]["ok"])
+    )
     checks = [
         DoctorCheck("app-home", config.app_home.exists(), f"app home: {config.app_home}"),
         DoctorCheck("config", config.config_path.exists(), f"config: {config.config_path}"),
@@ -112,6 +117,35 @@ def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
             config.report_artifacts_dir.exists(),
             f"reports: {config.report_artifacts_dir}",
         ),
+        DoctorCheck(
+            "broker-account-config",
+            (not config.broker.enabled)
+            or (
+                config.broker.paper_account_id is not None
+                and config.broker.live_account_id is not None
+            ),
+            (
+                "broker integration disabled"
+                if not config.broker.enabled
+                else (
+                    "paper and live IBKR accounts configured"
+                    if (
+                        config.broker.paper_account_id is not None
+                        and config.broker.live_account_id is not None
+                    )
+                    else "broker accounts must include both paper and live ids"
+                )
+            ),
+        ),
+        DoctorCheck(
+            "broker-connectivity",
+            broker_ready,
+            (
+                "broker integration disabled"
+                if not config.broker.enabled
+                else str(broker_snapshot["message"])
+            ),
+        ),
     ]
     return checks
 
@@ -135,5 +169,6 @@ def runtime_status(app_home: Path | None = None) -> dict[str, object]:
         "market_data": market_data_status(config) if has_database else None,
         "datasets": dataset_status(config) if has_database else None,
         "models": model_status(config) if has_database else None,
+        "broker": broker_status(config),
         "simulation": trading,
     }
