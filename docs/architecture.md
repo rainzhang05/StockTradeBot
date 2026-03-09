@@ -20,13 +20,13 @@ The intended repository structure is:
 │       ├── domain/
 │       ├── execution/
 │       ├── features/
+│       ├── frontend/
 │       ├── models/
 │       ├── portfolio/
 │       ├── risk/
 │       ├── runtime/
-│       ├── storage/
-│       └── ui/
-├── ui/
+│       └── storage/
+├── frontend/
 │   ├── src/
 │   ├── public/
 │   └── dist/
@@ -42,7 +42,7 @@ The intended repository structure is:
 Guiding rules:
 
 - Python code uses a `src/` layout.
-- The frontend is developed in `ui/` and its production build is served by the Python app.
+- The frontend is developed in `frontend/` and its production build is served by the Python app.
 - Migrations live with the Python backend.
 - Tests are grouped by scope, not by technology.
 
@@ -78,7 +78,7 @@ The backend is organized into these service domains:
 - `execution service`: converts approved orders into broker actions and records outcomes
 - `mode service`: governs simulation, paper, live-manual, and live-autonomous transitions
 - `reporting service`: produces status, audit, and operator reports
-- `ui/api service`: exposes operator-facing APIs and serves the frontend
+- `frontend/api service`: exposes operator-facing APIs and serves the frontend
 
 The frontend must communicate only through documented APIs. It may not call Python service objects directly.
 
