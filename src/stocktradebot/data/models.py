@@ -40,6 +40,22 @@ class CorporateActionRecord:
 
 
 @dataclass(slots=True, frozen=True)
+class FundamentalObservationRecord:
+    provider: str
+    symbol: str
+    metric_name: str
+    source_concept: str
+    fiscal_period_end: date
+    fiscal_period_type: str
+    filed_at: datetime
+    available_at: datetime
+    unit: str
+    value: float
+    form_type: str | None = None
+    accession: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class ProviderHistoryPayload:
     provider: str
     symbol: str
@@ -50,6 +66,19 @@ class ProviderHistoryPayload:
     raw_payload: str
     bars: tuple[DailyBarRecord, ...] = ()
     corporate_actions: tuple[CorporateActionRecord, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class FundamentalPayload:
+    provider: str
+    symbol: str
+    domain: str
+    requested_at: datetime
+    request_url: str
+    payload_format: str
+    raw_payload: str
+    observations: tuple[FundamentalObservationRecord, ...]
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -123,8 +152,41 @@ class BackfillSummary:
     secondary_provider: str | None
     payload_count: int
     observation_count: int
+    fundamentals_payload_count: int
+    fundamentals_observation_count: int
     canonical_count: int
     incident_count: int
     universe_snapshot_id: int | None
     validation_counts: dict[str, int]
     providers_used: tuple[str, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class FeatureRowRecord:
+    feature_set_version: str
+    symbol: str
+    trade_date: date
+    universe_snapshot_id: int | None
+    values: dict[str, float | None]
+    fundamentals_available_at: datetime | None
+
+
+@dataclass(slots=True, frozen=True)
+class LabelRowRecord:
+    label_version: str
+    symbol: str
+    trade_date: date
+    values: dict[str, float | None]
+
+
+@dataclass(slots=True, frozen=True)
+class DatasetSnapshotSummary:
+    snapshot_id: int
+    as_of_date: date
+    universe_snapshot_id: int | None
+    feature_set_version: str
+    label_version: str
+    row_count: int
+    null_statistics: dict[str, int]
+    artifact_path: str
+    metadata: dict[str, Any]
