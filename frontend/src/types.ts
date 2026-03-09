@@ -32,6 +32,14 @@ export interface AuditEvent {
   created_at: string;
 }
 
+export interface OperationalLogEvent {
+  timestamp: string | null;
+  level: string;
+  category: string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
 export interface ModeState {
   current_mode: AppMode;
   requested_mode: AppMode | null;
@@ -386,6 +394,7 @@ export interface WorkspaceSnapshot {
   system: {
     status: Record<string, unknown>;
     audit_events: AuditEvent[];
+    logs: OperationalLogEvent[];
   };
   broker: {
     paper: PaperStatus;
