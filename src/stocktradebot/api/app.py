@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from stocktradebot import __version__
 from stocktradebot.config import AppConfig, load_config
+from stocktradebot.data import market_data_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
 from stocktradebot.runtime import build_ui_url, collect_doctor_checks, runtime_status
 
@@ -56,6 +57,20 @@ def create_app(
     @app.get("/api/v1/system/status")
     def system_status() -> dict[str, object]:
         return runtime_status(app_config.app_home)
+
+    @app.get("/api/v1/market-data/status")
+    def market_data_job_status() -> dict[str, object]:
+        return market_data_status(app_config)
+
+    @app.get("/api/v1/market-data/incidents")
+    def market_data_incidents(limit: int = 20) -> dict[str, object]:
+        snapshot = market_data_status(app_config, incident_limit=limit)
+        return {"items": snapshot["recent_incidents"]}
+
+    @app.get("/api/v1/market-data/universe/latest")
+    def latest_universe_snapshot() -> dict[str, object]:
+        snapshot = market_data_status(app_config, incident_limit=0)
+        return {"snapshot": snapshot["latest_universe_snapshot"]}
 
     @app.get("/", response_class=HTMLResponse, response_model=None)
     def root() -> Response:
