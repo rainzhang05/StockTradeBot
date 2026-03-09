@@ -1467,7 +1467,10 @@ def _allowed_mode_transition(current_mode: str, target_mode: str) -> bool:
     allowed_transitions = {
         ("simulation", "paper"),
         ("paper", "simulation"),
+        ("live-manual", "simulation"),
         ("paper", "live-manual"),
+        ("live-autonomous", "paper"),
+        ("live-autonomous", "simulation"),
         ("live-manual", "paper"),
         ("live-manual", "live-autonomous"),
         ("live-autonomous", "live-manual"),
@@ -1476,6 +1479,16 @@ def _allowed_mode_transition(current_mode: str, target_mode: str) -> bool:
         ("frozen", "live-manual"),
     }
     return current_mode == target_mode or (current_mode, target_mode) in allowed_transitions
+
+
+def _assert_transition_not_blocked_by_freeze(session: Session, *, current_mode: str) -> None:
+    if current_mode != "frozen":
+        return
+    active_freeze = _active_freeze(session)
+    if active_freeze is not None:
+        raise RuntimeError(
+            f"Cannot leave frozen mode until the active freeze is cleared: {active_freeze.reason}"
+        )
 
 
 def _persist_mode_transition(
@@ -1559,6 +1572,7 @@ def enter_paper_mode(
             _clear_if_missing_active_freeze(session)
             mode_state = _current_mode_state(session)
             current_mode = mode_state.current_mode
+            _assert_transition_not_blocked_by_freeze(session, current_mode=current_mode)
             if not _allowed_mode_transition(current_mode, "paper"):
                 raise RuntimeError(f"Cannot transition from {current_mode} to paper.")
 
@@ -1598,6 +1612,57 @@ def enter_paper_mode(
         engine.dispose()
 
 
+def enter_simulation_mode(
+    config: AppConfig,
+    *,
+    source: str = "cli",
+    reason: str = "simulation mode requested",
+) -> ModeTransitionSummary:
+    if not database_exists(config) or not database_is_reachable(config):
+        raise RuntimeError("Database is not ready. Run init first.")
+
+    engine = create_db_engine(config)
+    try:
+        with Session(engine) as session:
+            _clear_if_missing_active_freeze(session)
+            mode_state = _current_mode_state(session)
+            current_mode = mode_state.current_mode
+            _assert_transition_not_blocked_by_freeze(session, current_mode=current_mode)
+            if not _allowed_mode_transition(current_mode, "simulation"):
+                raise RuntimeError(f"Cannot transition from {current_mode} to simulation.")
+
+            metadata = {"source": source}
+            _persist_mode_transition(
+                session,
+                previous_mode=current_mode,
+                new_mode="simulation",
+                live_profile=mode_state.live_profile,
+                source=source,
+                reason=reason,
+                metadata=metadata,
+            )
+            _update_mode_state(
+                session,
+                new_mode="simulation",
+                requested_mode=None,
+                live_profile=mode_state.live_profile,
+                metadata=metadata,
+            )
+            record_audit_event(config, "mode", "simulation mode entered")
+            return _mode_transition_summary(
+                previous_mode=current_mode,
+                current_mode="simulation",
+                requested_mode="simulation",
+                live_profile=mode_state.live_profile,
+                status="entered",
+                armed=True,
+                reason=reason,
+                metadata=metadata,
+            )
+    finally:
+        engine.dispose()
+
+
 def arm_live_mode(
     config: AppConfig,
     *,
@@ -1617,6 +1682,7 @@ def arm_live_mode(
             _clear_if_missing_active_freeze(session)
             mode_state = _current_mode_state(session)
             previous_mode = mode_state.current_mode
+            _assert_transition_not_blocked_by_freeze(session, current_mode=previous_mode)
             if not _allowed_mode_transition(previous_mode, target_mode):
                 raise RuntimeError(f"Cannot transition from {previous_mode} to {target_mode}.")
 
