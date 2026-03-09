@@ -13,6 +13,7 @@ import uvicorn
 from stocktradebot.api import create_app
 from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, initialize_config
 from stocktradebot.data import backfill_market_data
+from stocktradebot.execution import simulate_trading_day, simulation_status
 from stocktradebot.models import backtest_model, model_status, train_model
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
@@ -169,17 +170,75 @@ def backtest(
 
 
 @app.command()
-def paper() -> None:
-    _placeholder("paper")
+def simulate(
+    app_home: AppHomeOption = None,
+    as_of: AsOfOption = None,
+    model_version: ModelVersionOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    try:
+        summary = simulate_trading_day(
+            config,
+            as_of_date=_parse_as_of_date(as_of),
+            model_version=model_version,
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
 @app.command()
-def live() -> None:
-    _placeholder("live")
+def paper(app_home: AppHomeOption = None) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    snapshot = simulation_status(config)
+    typer.echo(
+        json.dumps(
+            {
+                "status": "disabled",
+                "message": "Paper trading remains unavailable until Phase 6.",
+                "current_mode": snapshot["mode_state"]["current_mode"],
+                "active_freeze": snapshot["active_freeze"],
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
+@app.command()
+def live(app_home: AppHomeOption = None) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    snapshot = simulation_status(config)
+    typer.echo(
+        json.dumps(
+            {
+                "status": "disabled",
+                "message": "Live trading remains unavailable until the IBKR integration phases.",
+                "current_mode": snapshot["mode_state"]["current_mode"],
+                "live_profile": snapshot["mode_state"]["live_profile"],
+                "active_freeze": snapshot["active_freeze"],
+            },
+            indent=2,
+            default=str,
+        )
+    )
 
 
 @app.command()
 def report(app_home: AppHomeOption = None) -> None:
     config = initialize_config(app_home)
     initialize_database(config)
-    typer.echo(json.dumps(model_status(config), indent=2, default=str))
+    typer.echo(
+        json.dumps(
+            {
+                "models": model_status(config),
+                "simulation": simulation_status(config),
+            },
+            indent=2,
+            default=str,
+        )
+    )
