@@ -1,6 +1,6 @@
 # StockTradeBot
 
-Phase 4 is implemented. The repository now includes the local-first Python package and FastAPI runtime, SQLite plus Alembic persistence, a React frontend workspace under `frontend/`, free-source daily market-data backfill, SEC-derived approximate fundamentals, availability-aware feature engineering, a deterministic baseline model trainer, walk-forward validation, event-driven backtesting, persisted research artifacts, and split CI workflows by concern.
+Phase 5 is implemented. The repository now includes the local-first Python package and FastAPI runtime, SQLite plus Alembic persistence, a React frontend workspace under `frontend/`, free-source daily market-data backfill, SEC-derived approximate fundamentals, availability-aware feature engineering, a deterministic baseline model trainer, walk-forward validation, event-driven backtesting, and a persisted simulation execution stack with portfolio construction, risk freezes, order intents, and fills.
 
 ## Quick Start
 
@@ -15,6 +15,7 @@ stocktradebot doctor
 stocktradebot backfill --symbol AAPL --symbol MSFT --symbol SPY --lookback-days 180 --as-of 2026-04-15
 stocktradebot train --as-of 2026-04-15
 stocktradebot backtest
+stocktradebot simulate --as-of 2026-04-15
 stocktradebot report
 stocktradebot status
 stocktradebot --check-only --no-browser
