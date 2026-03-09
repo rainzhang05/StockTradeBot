@@ -21,7 +21,7 @@ def test_initialize_database_runs_migrations(isolated_app_home: Path) -> None:
 
     assert database_exists(config)
     assert database_is_reachable(config)
-    assert read_app_state(config, "schema_version") == "phase5"
+    assert read_app_state(config, "schema_version") == "phase6"
     assert simulation_status(config)["mode_state"]["current_mode"] == "simulation"
 
 
