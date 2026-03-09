@@ -19,6 +19,7 @@ import type {
   FillSnapshot,
   HealthCheck,
   LiveGateCheck,
+  OperationalLogEvent,
   OrderSnapshot,
   PortfolioPosition,
   WorkspaceSnapshot
@@ -237,6 +238,33 @@ function AuditFeed(props: { items: AuditEvent[] }): JSX.Element {
             <span>{formatDateTime(item.created_at)}</span>
           </div>
           <p>{item.message}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function OperationalLogFeed(props: { items: OperationalLogEvent[] }): JSX.Element {
+  if (props.items.length === 0) {
+    return <p className="empty-state">No operational logs recorded yet.</p>;
+  }
+
+  return (
+    <div className="timeline">
+      {props.items.map((item, index) => (
+        <article className="timeline__item" key={`${item.timestamp ?? "missing"}-${item.category}-${index}`}>
+          <div className="timeline__meta">
+            <StatusPill
+              label={item.level}
+              tone={item.level === "error" ? "alert" : item.level === "warning" ? "accent" : "muted"}
+            />
+            <StatusPill label={item.category} tone="muted" />
+            <span>{formatDateTime(item.timestamp)}</span>
+          </div>
+          <p>{item.message}</p>
+          {Object.keys(item.details).length > 0 ? (
+            <pre className="log-details">{JSON.stringify(item.details, null, 2)}</pre>
+          ) : null}
         </article>
       ))}
     </div>
@@ -543,7 +571,7 @@ function App(): JSX.Element {
     return (
       <main className="app-shell">
         <section className="hero-panel">
-          <p className="hero-panel__eyebrow">Phase 7</p>
+          <p className="hero-panel__eyebrow">Phase 8</p>
           <h1>StockTradeBot Operator Console</h1>
           <p>Loading the local control surface.</p>
         </section>
@@ -555,7 +583,7 @@ function App(): JSX.Element {
     <main className="app-shell">
       <header className="hero-panel">
         <div>
-          <p className="hero-panel__eyebrow">Phase 7</p>
+          <p className="hero-panel__eyebrow">Phase 8</p>
           <h1>StockTradeBot Operator Console</h1>
           <p className="hero-panel__copy">
             Install, configure, monitor, and control the local trading stack from one browser
@@ -1068,6 +1096,10 @@ function App(): JSX.Element {
                 </div>
               </Section>
 
+              <Section title="Operational Logs" description="Recent structured runtime events from the local logs directory help explain failures that are broader than a single audit event.">
+                <OperationalLogFeed items={workspace?.system.logs ?? []} />
+              </Section>
+
               <Section title="System Snapshot">
                 <KeyValueList
                   rows={[
@@ -1075,7 +1107,8 @@ function App(): JSX.Element {
                     { label: "Database", value: workspace?.setup.database_path ?? "n/a" },
                     { label: "Mode", value: workspace?.system.status.mode ? String(workspace.system.status.mode) : "n/a" },
                     { label: "Schema version", value: workspace?.system.status.schema_version ? String(workspace.system.status.schema_version) : "n/a" },
-                    { label: "App home", value: workspace?.system.status.app_home ? String(workspace.system.status.app_home) : "n/a" }
+                    { label: "App home", value: workspace?.system.status.app_home ? String(workspace.system.status.app_home) : "n/a" },
+                    { label: "Logs dir", value: workspace?.config.logs_dir ? String(workspace.config.logs_dir) : "n/a" }
                   ]}
                 />
               </Section>
