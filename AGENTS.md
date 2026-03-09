@@ -106,6 +106,8 @@ Agents must commit locally and frequently.
 Commit rules:
 
 - make small, atomic commits
+- prefer exactly one changed file per commit whenever practical
+- if a task changes multiple files, split it into as many commits as needed so each file lands in its own commit unless a multi-file commit is truly required for repository integrity
 - one logical slice per commit
 - avoid bundling unrelated docs/code/workflow changes together
 - use clear, descriptive commit messages
