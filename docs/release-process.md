@@ -1,6 +1,6 @@
 # StockTradeBot Release Process
 
-Phase 8 defines the repository release checklist for the local-first operator build.
+This document defines the repository release checklist for the current local-first operator build.
 
 ## Release Goal
 
@@ -22,6 +22,8 @@ stocktradebot
 5. confirm the package smoke test installs the built artifact in isolation and serves the bundled UI
 6. update `README.md`, `docs/current-state.md`, and any operator-facing docs changed by the release
 7. create a tag only after the verification results are complete and recorded
+
+When a release changes the available research surface, update the root README examples so CLI workflows match the current supported daily and intraday commands.
 
 ## Package Smoke Expectations
 
