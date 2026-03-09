@@ -407,6 +407,167 @@ class BacktestRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SystemModeState(Base):
+    __tablename__ = "system_mode_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    current_mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    requested_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    live_profile: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_frozen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    active_freeze_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    freeze_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class FreezeEvent(Base):
+    __tablename__ = "freeze_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    freeze_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    details_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    triggered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SimulationRun(Base):
+    __tablename__ = "simulation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    decision_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    model_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_registry_entries.id"),
+        nullable=True,
+    )
+    dataset_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_snapshots.id"),
+        nullable=True,
+    )
+    regime: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    gross_exposure_target: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    gross_exposure_actual: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    start_nav: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    end_nav: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cash_start: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cash_end: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    artifact_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("simulation_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    nav: Mapped[float] = mapped_column(Float, nullable=False)
+    cash_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    gross_exposure: Mapped[float] = mapped_column(Float, nullable=False)
+    net_exposure: Mapped[float] = mapped_column(Float, nullable=False)
+    holding_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    turnover_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
+class PortfolioSnapshotPosition(Base):
+    __tablename__ = "portfolio_snapshot_positions"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolio_snapshots.id"),
+        primary_key=True,
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    actual_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    shares: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    market_value: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+
+class OrderIntent(Base):
+    __tablename__ = "order_intents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("simulation_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    order_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    time_in_force: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_shares: Mapped[float] = mapped_column(Float, nullable=False)
+    requested_notional: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reference_price: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_slippage_bps: Mapped[float] = mapped_column(Float, nullable=False)
+    target_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExecutionFill(Base):
+    __tablename__ = "execution_fills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("simulation_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    order_intent_id: Mapped[int] = mapped_column(
+        ForeignKey("order_intents.id"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    fill_status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    filled_shares: Mapped[float] = mapped_column(Float, nullable=False)
+    filled_notional: Mapped[float] = mapped_column(Float, nullable=False)
+    fill_price: Mapped[float] = mapped_column(Float, nullable=False)
+    commission: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    slippage_bps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    expected_spread_bps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    filled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -426,7 +587,8 @@ def create_db_engine(config: AppConfig) -> Engine:
 def initialize_database(config: AppConfig) -> None:
     config.ensure_runtime_dirs()
     command.upgrade(alembic_config(config.database_url()), "head")
-    upsert_app_state(config, "schema_version", "phase4")
+    upsert_app_state(config, "schema_version", "phase5")
+    ensure_system_mode_state(config)
 
 
 def database_exists(config: AppConfig) -> bool:
@@ -479,5 +641,28 @@ def record_audit_event(config: AppConfig, category: str, message: str) -> None:
         with Session(engine) as session:
             session.add(AuditEvent(category=category, message=message))
             session.commit()
+    finally:
+        engine.dispose()
+
+
+def ensure_system_mode_state(config: AppConfig) -> None:
+    engine = create_db_engine(config)
+    try:
+        with Session(engine) as session:
+            existing = session.get(SystemModeState, 1)
+            if existing is None:
+                session.add(
+                    SystemModeState(
+                        id=1,
+                        current_mode=config.execution.default_mode,
+                        requested_mode=None,
+                        live_profile=config.execution.live_profile,
+                        is_frozen=False,
+                        active_freeze_event_id=None,
+                        freeze_reason=None,
+                        metadata_json="{}",
+                    )
+                )
+                session.commit()
     finally:
         engine.dispose()
