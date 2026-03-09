@@ -211,3 +211,4 @@ __marimo__/
 *.db
 frontend/dist/
 frontend/node_modules/
+output/playwright/
