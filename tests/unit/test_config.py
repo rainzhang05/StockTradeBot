@@ -18,12 +18,15 @@ def test_initialize_config_creates_expected_paths(isolated_app_home: Path) -> No
     assert config.database_path.parent.exists()
     assert config.artifacts_dir.exists()
     assert config.logs_dir.exists()
+    assert config.raw_payload_dir.exists()
 
 
 def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     config = AppConfig.default(isolated_app_home)
     config.api_port = 8123
     config.timezone = "UTC"
+    config.data_providers.secondary_provider = "alpha_vantage"
+    config.universe.max_stocks = 120
     config.save()
 
     loaded = load_config(isolated_app_home)
@@ -31,3 +34,5 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     assert loaded.api_port == 8123
     assert loaded.timezone == "UTC"
     assert loaded.database_path == config.database_path
+    assert loaded.data_providers.secondary_provider == "alpha_vantage"
+    assert loaded.universe.max_stocks == 120
