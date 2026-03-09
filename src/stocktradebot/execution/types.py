@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 
@@ -72,4 +72,41 @@ class SimulationRunSummary:
     fill_count: int
     freeze_triggered: bool
     artifact_path: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class ApprovalSummary:
+    approval_id: int
+    order_intent_id: int
+    symbol: str
+    mode: str
+    status: str
+    reason: str | None
+    broker_order_id: int | None
+    created_at: datetime
+    decided_at: datetime | None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class ModeTransitionSummary:
+    previous_mode: str
+    current_mode: str
+    requested_mode: str
+    live_profile: str
+    status: str
+    armed: bool
+    reason: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class TradingOperationSummary:
+    action: str
+    mode: str
+    status: str
+    message: str
+    run_id: int | None
+    approvals: tuple[ApprovalSummary, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
