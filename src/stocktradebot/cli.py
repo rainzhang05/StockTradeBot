@@ -52,7 +52,12 @@ def main(
     if bootstrap.config.open_browser_on_launch and not no_browser:
         webbrowser.open(bootstrap.ui_url)
 
-    uvicorn.run(create_app(bootstrap.config), host=host, port=port, log_level="info")
+    uvicorn.run(
+        create_app(bootstrap.config, runtime_host=host, runtime_port=port),
+        host=host,
+        port=port,
+        log_level="info",
+    )
 
 
 @app.command()

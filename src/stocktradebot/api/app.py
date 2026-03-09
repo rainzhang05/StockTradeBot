@@ -13,10 +13,17 @@ from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
 from stocktradebot.runtime import build_ui_url, collect_doctor_checks, runtime_status
 
 
-def create_app(config: AppConfig | None = None) -> FastAPI:
+def create_app(
+    config: AppConfig | None = None,
+    *,
+    runtime_host: str | None = None,
+    runtime_port: int | None = None,
+) -> FastAPI:
     app_config = config or load_config()
     app = FastAPI(title="StockTradeBot", version=__version__)
     app.state.config = app_config
+    app.state.runtime_host = runtime_host or app_config.api_host
+    app.state.runtime_port = runtime_port or app_config.api_port
 
     frontend_dist = find_frontend_dist()
     assets_path = frontend_dist / "assets" if frontend_dist else None
@@ -31,7 +38,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "version": __version__,
             "mode": "simulation",
             "checks": [asdict(check) for check in checks],
-            "ui_url": build_ui_url(app_config.api_host, app_config.api_port),
+            "ui_url": build_ui_url(app.state.runtime_host, app.state.runtime_port),
         }
 
     @app.get("/api/v1/setup")
