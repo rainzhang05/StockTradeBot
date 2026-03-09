@@ -75,9 +75,9 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Models/backtesting | Complete for Phase 9 | Deterministic baseline training, daily and intraday walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
-| Frontend/UI | Complete for Phase 8 | Operator dashboard, setup flow, control screens, live approval UX, and release-packaged frontend serving are implemented |
-| Tests/coverage | Complete for Phase 8 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E; package smoke verification now tests installed runtime serving |
-| GitHub Actions | Complete for Phase 8 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build plus installed-wheel smoke verification |
+| Frontend/UI | Complete for Phase 8 and current in Phase 9 | Operator dashboard, setup flow, control screens, live approval UX, and release-packaged frontend serving are implemented; Phase 9 added intraday backend and CLI capabilities without introducing a separate dedicated frontend surface |
+| Tests/coverage | Complete for Phase 9 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E; package smoke verification now tests installed runtime serving; intraday research paths are covered by unit and integration tests |
+| GitHub Actions | Complete for Phase 9 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build plus installed-wheel smoke verification for the current intraday-capable codebase |
 
 ## Active Constraints
 
@@ -122,8 +122,8 @@ This file describes the repository as it exists now. Update it at the end of eve
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, and verify the installed runtime serves the bundled UI
 - editable install smoke: passed locally from a fresh source copy with `frontend/dist` removed, using `python -m pip install -e ".[dev]"` under Python 3.14
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
-- backend-served browser smoke: passed locally against `stocktradebot --app-home /tmp/stocktradebot-phase7.Xt2YBf --host 127.0.0.1 --port 8011 --no-browser`, verified in Chromium and captured to `output/playwright/phase7-backend-ui.png`
-- Phase 7 integration verification: full pytest suite passed locally, including paper execution, live-manual preparation and approval, API control surfaces, config mutation, mode transitions, and browser-driven operator workflows
+- backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
+- Phase 9 integration verification: full pytest suite passed locally, including daily and intraday API flows, intraday dataset and validation paths, paper execution, live-manual preparation and approval, config mutation, mode transitions, and browser-driven operator workflows
 
 ## Last Updated Because
 
