@@ -95,6 +95,12 @@ GitHub workflows must eventually cover:
 - coverage threshold enforcement
 - build/package verification
 
+Workflow structure rules:
+
+- split GitHub workflows by concern instead of expanding one monolithic workflow file
+- keep backend quality, backend tests, frontend checks, and packaging in separate workflow files unless there is a documented reason not to
+- when a new subsystem requires CI coverage, add it to the closest focused workflow or create a new focused workflow if it does not fit an existing one
+
 Local developer commands must mirror CI intent closely enough that a contributor can reproduce failures before pushing.
 
 If a new subsystem is added, the necessary workflow coverage for it must be added in the same phase or the next explicitly planned hardening task.
