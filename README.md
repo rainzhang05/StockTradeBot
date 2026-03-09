@@ -1,1 +1,1 @@
-# StockTradeBot
+# Stock Trade Bot
