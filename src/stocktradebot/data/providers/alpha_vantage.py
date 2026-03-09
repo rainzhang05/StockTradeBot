@@ -6,8 +6,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from stocktradebot.data.models import CorporateActionRecord, DailyBarRecord, ProviderHistoryPayload
+from stocktradebot.data.models import (
+    CorporateActionRecord,
+    DailyBarRecord,
+    IntradayBarRecord,
+    ProviderHistoryPayload,
+)
 from stocktradebot.data.providers.base import ProviderError
+from stocktradebot.intraday import get_frequency_spec
 
 
 class AlphaVantageDailyHistoryProvider:
@@ -109,4 +115,91 @@ class AlphaVantageDailyHistoryProvider:
             raw_payload=raw_payload,
             bars=tuple(sorted(bars, key=lambda bar: bar.trade_date)),
             corporate_actions=tuple(sorted(corporate_actions, key=lambda action: action.ex_date)),
+        )
+
+
+class AlphaVantageIntradayHistoryProvider:
+    name = "alpha_vantage"
+
+    def __init__(self, *, base_url: str, timeout_seconds: float, api_key: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = timeout_seconds
+        self.api_key = api_key
+
+    def fetch_intraday_history(
+        self,
+        symbol: str,
+        *,
+        frequency: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> ProviderHistoryPayload:
+        spec = get_frequency_spec(frequency)
+        query = urlencode(
+            {
+                "function": "TIME_SERIES_INTRADAY",
+                "outputsize": "full",
+                "symbol": symbol,
+                "interval": spec.provider_interval,
+                "extended_hours": "false",
+                "apikey": self.api_key,
+            }
+        )
+        request_url = f"{self.base_url}/query?{query}"
+        requested_at = datetime.now(UTC)
+        try:
+            with urlopen(request_url, timeout=self.timeout_seconds) as response:
+                raw_payload = response.read().decode("utf-8")
+        except HTTPError as exc:  # pragma: no cover - network dependent
+            raise ProviderError(
+                f"Alpha Vantage intraday request failed for {symbol}: HTTP {exc.code}"
+            ) from exc
+        except URLError as exc:  # pragma: no cover - network dependent
+            raise ProviderError(
+                f"Alpha Vantage intraday request failed for {symbol}: {exc.reason}"
+            ) from exc
+
+        payload = json.loads(raw_payload)
+        if "Error Message" in payload:
+            raise ProviderError(f"Alpha Vantage rejected {symbol}: {payload['Error Message']}")
+        if "Note" in payload:
+            raise ProviderError(f"Alpha Vantage throttled {symbol}: {payload['Note']}")
+
+        series_key = f"Time Series ({spec.provider_interval})"
+        series = payload.get(series_key)
+        if not isinstance(series, dict):
+            raise ProviderError(
+                f"Alpha Vantage returned no intraday series for {symbol} at {frequency}"
+            )
+
+        intraday_bars: list[IntradayBarRecord] = []
+        for bar_start_text, values in series.items():
+            bar_start = datetime.strptime(bar_start_text, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+            if bar_start < start_at or bar_start > end_at:
+                continue
+            intraday_bars.append(
+                IntradayBarRecord(
+                    provider=self.name,
+                    symbol=symbol,
+                    frequency=spec.name,
+                    bar_start=bar_start,
+                    open=float(values["1. open"]),
+                    high=float(values["2. high"]),
+                    low=float(values["3. low"]),
+                    close=float(values["4. close"]),
+                    volume=int(values["5. volume"]),
+                )
+            )
+
+        redacted_url = request_url.replace(self.api_key, "REDACTED")
+        return ProviderHistoryPayload(
+            provider=self.name,
+            symbol=symbol,
+            domain=f"intraday_prices:{spec.name}",
+            requested_at=requested_at,
+            request_url=redacted_url,
+            payload_format="json",
+            raw_payload=raw_payload,
+            intraday_bars=tuple(sorted(intraday_bars, key=lambda bar: bar.bar_start)),
+            metadata={"frequency": spec.name},
         )
