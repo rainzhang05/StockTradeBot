@@ -131,7 +131,16 @@ function createWorkspace(): WorkspaceSnapshot {
         schema_version: "phase6",
         app_home: "/tmp/stocktradebot"
       },
-      audit_events: [{ id: 1, category: "runtime", message: "runtime prepared", created_at: "2026-03-09T10:00:00Z" }]
+      audit_events: [{ id: 1, category: "runtime", message: "runtime prepared", created_at: "2026-03-09T10:00:00Z" }],
+      logs: [
+        {
+          timestamp: "2026-03-09T10:00:00Z",
+          level: "info",
+          category: "runtime",
+          message: "runtime prepared",
+          details: { port: 8000 }
+        }
+      ]
     },
     broker: {
       paper,
@@ -432,6 +441,18 @@ describe("App", () => {
         headers: { "Content-Type": "application/json" }
       });
     }) as typeof fetch;
+  });
+
+  it("shows operational logs on the system screen", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Top Signals")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "System" }));
+
+    expect(await screen.findByText("Operational Logs")).toBeInTheDocument();
+    expect(screen.getAllByText("runtime prepared")).toHaveLength(2);
+    expect(screen.getByText(/"port": 8000/)).toBeInTheDocument();
   });
 
   afterEach(() => {
