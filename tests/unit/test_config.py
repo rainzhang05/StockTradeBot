@@ -35,6 +35,10 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     config.model_training.feature_set_version = "daily-core-v2"
     config.model_training.training_window_days = 150
     config.model_training.commission_bps = 2.5
+    config.portfolio.defensive_etf_symbol = "SHY"
+    config.portfolio.symbol_sectors = {"AAPL": "Technology"}
+    config.risk.allow_research_models_in_simulation = False
+    config.execution.base_slippage_bps = 7.5
     config.save()
 
     loaded = load_config(isolated_app_home)
@@ -49,3 +53,7 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     assert loaded.model_training.feature_set_version == "daily-core-v2"
     assert loaded.model_training.training_window_days == 150
     assert loaded.model_training.commission_bps == 2.5
+    assert loaded.portfolio.defensive_etf_symbol == "SHY"
+    assert loaded.portfolio.symbol_sectors["AAPL"] == "Technology"
+    assert loaded.risk.allow_research_models_in_simulation is False
+    assert loaded.execution.base_slippage_bps == 7.5
