@@ -749,6 +749,42 @@ def load_config(app_home: Path | None = None) -> AppConfig:
     return AppConfig.from_dict(data, app_home=defaults.app_home)
 
 
+def _validate_config_patch_keys(
+    base: dict[str, Any],
+    patch: dict[str, Any],
+    *,
+    prefix: str = "",
+) -> None:
+    for key, value in patch.items():
+        if key not in base:
+            raise KeyError(f"Unsupported config field: {prefix}{key}")
+        base_value = base[key]
+        if isinstance(value, dict):
+            if not isinstance(base_value, dict):
+                raise KeyError(f"Unsupported nested config field: {prefix}{key}")
+            _validate_config_patch_keys(base_value, value, prefix=f"{prefix}{key}.")
+
+
+def _merge_config_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in patch.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _merge_config_dict(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def apply_config_patch(config: AppConfig, patch: dict[str, Any]) -> AppConfig:
+    current = config.to_dict()
+    _validate_config_patch_keys(current, patch)
+    merged = _merge_config_dict(current, patch)
+    updated = AppConfig.from_dict(merged, app_home=config.app_home)
+    updated.save()
+    return updated
+
+
 def initialize_config(app_home: Path | None = None, *, overwrite: bool = False) -> AppConfig:
     config = AppConfig.default(app_home)
     if config.config_path.exists() and not overwrite:
