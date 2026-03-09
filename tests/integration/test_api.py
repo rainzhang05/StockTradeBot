@@ -25,6 +25,7 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     status = client.get("/api/v1/system/status")
     mode = client.get("/api/v1/system/mode")
     audit = client.get("/api/v1/system/audit")
+    logs = client.get("/api/v1/system/logs")
     market_data = client.get("/api/v1/market-data/status")
     incidents = client.get("/api/v1/market-data/incidents")
     universe = client.get("/api/v1/market-data/universe/latest")
@@ -54,6 +55,8 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert mode.json()["mode_state"]["current_mode"] == "simulation"
     assert audit.status_code == 200
     assert audit.json()["items"] == []
+    assert logs.status_code == 200
+    assert any(item["message"] == "api app created" for item in logs.json()["items"])
     assert health.json()["ui_url"] == "http://127.0.0.1:8000"
     assert market_data.status_code == 200
     assert market_data.json()["latest_run"] is None
@@ -93,6 +96,7 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert workspace.status_code == 200
     assert workspace.json()["health"]["status"] == "ok"
     assert workspace.json()["system"]["audit_events"] == []
+    assert any(item["category"] == "api" for item in workspace.json()["system"]["logs"])
 
 
 def test_api_health_reports_runtime_override(isolated_app_home) -> None:
@@ -116,6 +120,24 @@ def test_root_returns_placeholder_ui(isolated_app_home) -> None:
     assert response.status_code == 200
     assert "StockTradeBot" in response.text
     assert response.headers["content-type"].startswith("text/html")
+
+
+def test_root_serves_frontend_bundle_when_present(isolated_app_home, monkeypatch, tmp_path) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    frontend_dist = tmp_path / "dist"
+    frontend_dist.mkdir()
+    (frontend_dist / "index.html").write_text(
+        '<html><body><div id="root">bundle</div></body></html>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("stocktradebot.api.app.find_frontend_dist", lambda: frontend_dist)
+    client = TestClient(create_app(config))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "bundle" in response.text
 
 
 def test_dataset_build_endpoint_validates_dates(isolated_app_home) -> None:
