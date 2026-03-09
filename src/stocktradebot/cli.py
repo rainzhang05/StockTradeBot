@@ -11,7 +11,7 @@ import typer
 import uvicorn
 
 from stocktradebot.api import create_app
-from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, initialize_config
+from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, AppConfig, initialize_config
 from stocktradebot.data import backfill_market_data
 from stocktradebot.execution import (
     approve_live_trading_run,
@@ -25,6 +25,7 @@ from stocktradebot.execution import (
     simulation_status,
 )
 from stocktradebot.models import backtest_model, model_status, train_model
+from stocktradebot.observability import record_operational_event
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
 
@@ -86,6 +87,23 @@ AckDisableApprovalsOption = Annotated[
 ]
 
 
+def _log_cli_event(
+    config: AppConfig,
+    *,
+    command: str,
+    message: str,
+    level: str = "info",
+    details: dict[str, object] | None = None,
+) -> None:
+    record_operational_event(
+        config,
+        category=f"cli:{command}",
+        message=message,
+        level=level,
+        details=details,
+    )
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -99,6 +117,12 @@ def main(
         return
 
     bootstrap = prepare_runtime(app_home, host=host, port=port)
+    _log_cli_event(
+        bootstrap.config,
+        command="main",
+        message="launch command invoked",
+        details={"check_only": check_only, "no_browser": no_browser},
+    )
     for check in bootstrap.checks:
         icon = "OK" if check.ok else "FAIL"
         typer.echo(f"{icon:>4} {check.name}: {check.detail}")
@@ -126,6 +150,9 @@ def init(
     config = initialize_config(app_home, overwrite=force)
     initialize_database(config)
     record_audit_event(config, "cli", "init command completed")
+    _log_cli_event(
+        config, command="init", message="init command completed", details={"force": force}
+    )
     typer.echo(f"Initialized StockTradeBot in {config.app_home}")
 
 
@@ -134,6 +161,13 @@ def doctor(app_home: AppHomeOption = None) -> None:
     config = initialize_config(app_home)
     initialize_database(config)
     checks = collect_doctor_checks(config)
+    _log_cli_event(
+        config,
+        command="doctor",
+        message="doctor command completed",
+        level="info" if all(check.ok for check in checks) else "warning",
+        details={"failed_checks": [check.name for check in checks if not check.ok]},
+    )
     for check in checks:
         icon = "OK" if check.ok else "FAIL"
         typer.echo(f"{icon:>4} {check.name}: {check.detail}")
@@ -144,6 +178,9 @@ def doctor(app_home: AppHomeOption = None) -> None:
 
 @app.command()
 def status(app_home: AppHomeOption = None) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    _log_cli_event(config, command="status", message="status command completed")
     typer.echo(json.dumps(runtime_status(app_home), indent=2))
 
 
@@ -176,6 +213,12 @@ def backfill(
         primary_provider=primary_provider,
         secondary_provider=secondary_provider,
     )
+    _log_cli_event(
+        config,
+        command="backfill",
+        message="market-data backfill completed",
+        details={"run_id": summary.run_id, "canonical_count": summary.canonical_count},
+    )
     typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
@@ -189,8 +232,21 @@ def train(
     try:
         summary = train_model(config, as_of_date=_parse_as_of_date(as_of))
     except RuntimeError as exc:
+        _log_cli_event(
+            config,
+            command="train",
+            message="training command failed",
+            level="error",
+            details={"error": str(exc)},
+        )
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    _log_cli_event(
+        config,
+        command="train",
+        message="training command completed",
+        details={"run_id": summary.run_id, "model_version": summary.model_version},
+    )
     typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
@@ -204,8 +260,21 @@ def backtest(
     try:
         summary = backtest_model(config, model_version=model_version)
     except RuntimeError as exc:
+        _log_cli_event(
+            config,
+            command="backtest",
+            message="backtest command failed",
+            level="error",
+            details={"error": str(exc)},
+        )
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    _log_cli_event(
+        config,
+        command="backtest",
+        message="backtest command completed",
+        details={"run_id": summary.run_id, "model_version": summary.model_version},
+    )
     typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
@@ -224,8 +293,21 @@ def simulate(
             model_version=model_version,
         )
     except RuntimeError as exc:
+        _log_cli_event(
+            config,
+            command="simulate",
+            message="simulation command failed",
+            level="error",
+            details={"error": str(exc)},
+        )
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+    _log_cli_event(
+        config,
+        command="simulate",
+        message="simulation command completed",
+        details={"run_id": summary.run_id, "mode": summary.mode},
+    )
     typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
@@ -245,10 +327,24 @@ def paper(
                 as_of_date=_parse_as_of_date(as_of),
                 model_version=model_version,
             )
+            _log_cli_event(
+                config,
+                command="paper",
+                message="paper command completed",
+                details={"run_id": summary.run_id, "mode": summary.mode},
+            )
             typer.echo(json.dumps(asdict(summary), indent=2, default=str))
             return
+        _log_cli_event(config, command="paper", message="paper status requested")
         typer.echo(json.dumps(paper_status(config), indent=2, default=str))
     except RuntimeError as exc:
+        _log_cli_event(
+            config,
+            command="paper",
+            message="paper command failed",
+            level="error",
+            details={"error": str(exc)},
+        )
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -278,6 +374,12 @@ def live(
                 source="cli",
                 reason="live arm requested from CLI",
             )
+            _log_cli_event(
+                config,
+                command="live",
+                message="live arm command completed",
+                details={"current_mode": arm_summary.current_mode, "status": arm_summary.status},
+            )
             typer.echo(json.dumps(asdict(arm_summary), indent=2, default=str))
             return
         if run:
@@ -288,6 +390,12 @@ def live(
                     approve_all=approve_all,
                     approve_symbols=approve_symbol,
                     reject_symbols=reject_symbol,
+                )
+                _log_cli_event(
+                    config,
+                    command="live",
+                    message="live approvals processed",
+                    details={"status": approval_summary.status, "run_id": approval_summary.run_id},
                 )
                 typer.echo(json.dumps(asdict(approval_summary), indent=2, default=str))
                 return
@@ -302,6 +410,12 @@ def live(
                     model_version=model_version,
                     ack_disable_approvals=ack_disable_approvals,
                 )
+                _log_cli_event(
+                    config,
+                    command="live",
+                    message="live-autonomous run completed",
+                    details={"status": run_summary.status, "run_id": run_summary.run_id},
+                )
                 typer.echo(json.dumps(asdict(run_summary), indent=2, default=str))
                 return
             preparation_summary = prepare_live_trading_day(
@@ -309,10 +423,27 @@ def live(
                 as_of_date=_parse_as_of_date(as_of),
                 model_version=model_version,
             )
+            _log_cli_event(
+                config,
+                command="live",
+                message="live-manual preparation completed",
+                details={
+                    "status": preparation_summary.status,
+                    "run_id": preparation_summary.run_id,
+                },
+            )
             typer.echo(json.dumps(asdict(preparation_summary), indent=2, default=str))
             return
+        _log_cli_event(config, command="live", message="live status requested")
         typer.echo(json.dumps(live_status(config), indent=2, default=str))
     except RuntimeError as exc:
+        _log_cli_event(
+            config,
+            command="live",
+            message="live command failed",
+            level="error",
+            details={"error": str(exc)},
+        )
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -321,6 +452,7 @@ def live(
 def report(app_home: AppHomeOption = None) -> None:
     config = initialize_config(app_home)
     initialize_database(config)
+    _log_cli_event(config, command="report", message="report command completed")
     typer.echo(
         json.dumps(
             {
