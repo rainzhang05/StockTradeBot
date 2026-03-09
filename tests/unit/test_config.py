@@ -20,6 +20,8 @@ def test_initialize_config_creates_expected_paths(isolated_app_home: Path) -> No
     assert config.logs_dir.exists()
     assert config.raw_payload_dir.exists()
     assert config.dataset_artifacts_dir.exists()
+    assert config.model_artifacts_dir.exists()
+    assert config.report_artifacts_dir.exists()
 
 
 def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
@@ -31,6 +33,8 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     config.fundamentals_provider.symbol_to_cik = {"AAPL": "320193"}
     config.universe.max_stocks = 120
     config.model_training.feature_set_version = "daily-core-v2"
+    config.model_training.training_window_days = 150
+    config.model_training.commission_bps = 2.5
     config.save()
 
     loaded = load_config(isolated_app_home)
@@ -43,3 +47,5 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     assert loaded.fundamentals_provider.symbol_to_cik["AAPL"] == "0000320193"
     assert loaded.universe.max_stocks == 120
     assert loaded.model_training.feature_set_version == "daily-core-v2"
+    assert loaded.model_training.training_window_days == 150
+    assert loaded.model_training.commission_bps == 2.5
