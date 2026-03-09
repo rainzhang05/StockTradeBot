@@ -15,6 +15,9 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     health = client.get("/api/v1/health")
     setup = client.get("/api/v1/setup")
     status = client.get("/api/v1/system/status")
+    market_data = client.get("/api/v1/market-data/status")
+    incidents = client.get("/api/v1/market-data/incidents")
+    universe = client.get("/api/v1/market-data/universe/latest")
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
@@ -23,6 +26,12 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert status.status_code == 200
     assert status.json()["mode"] == "simulation"
     assert health.json()["ui_url"] == "http://127.0.0.1:8000"
+    assert market_data.status_code == 200
+    assert market_data.json()["latest_run"] is None
+    assert incidents.status_code == 200
+    assert incidents.json()["items"] == []
+    assert universe.status_code == 200
+    assert universe.json()["snapshot"] is None
 
 
 def test_api_health_reports_runtime_override(isolated_app_home) -> None:
