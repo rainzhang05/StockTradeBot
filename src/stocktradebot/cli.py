@@ -13,6 +13,7 @@ import uvicorn
 from stocktradebot.api import create_app
 from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, initialize_config
 from stocktradebot.data import backfill_market_data
+from stocktradebot.features import build_dataset_snapshot
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
 
@@ -135,8 +136,18 @@ def backfill(
 
 
 @app.command()
-def train() -> None:
-    _placeholder("train")
+def train(
+    app_home: AppHomeOption = None,
+    as_of: AsOfOption = None,
+) -> None:
+    config = initialize_config(app_home)
+    initialize_database(config)
+    try:
+        summary = build_dataset_snapshot(config, as_of_date=_parse_as_of_date(as_of))
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 
 
 @app.command()
