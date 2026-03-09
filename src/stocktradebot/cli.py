@@ -13,16 +13,22 @@ import uvicorn
 from stocktradebot.api import create_app
 from stocktradebot.config import DEFAULT_HOST, DEFAULT_PORT, initialize_config
 from stocktradebot.data import backfill_market_data
-from stocktradebot.execution import simulate_trading_day, simulation_status
+from stocktradebot.execution import (
+    approve_live_trading_run,
+    arm_live_mode,
+    live_status,
+    paper_status,
+    paper_trade_day,
+    prepare_live_trading_day,
+    run_live_trading_day,
+    simulate_trading_day,
+    simulation_status,
+)
 from stocktradebot.models import backtest_model, model_status, train_model
 from stocktradebot.runtime import collect_doctor_checks, prepare_runtime, runtime_status
 from stocktradebot.storage import initialize_database, record_audit_event
 
 app = typer.Typer(add_completion=False, help="StockTradeBot command line interface.")
-
-
-def _placeholder(command_name: str) -> None:
-    typer.echo(f"{command_name} is reserved for a later roadmap phase and is not implemented yet.")
 
 
 AppHomeOption = Annotated[Path | None, typer.Option(file_okay=False, dir_okay=True)]
@@ -43,6 +49,40 @@ SymbolsOption = Annotated[
 ProviderNameOption = Annotated[str | None, typer.Option()]
 ModelVersionOption = Annotated[
     str | None, typer.Option(help="Use a specific trained model version.")
+]
+RunOption = Annotated[
+    bool,
+    typer.Option(help="Execute the trading workflow instead of showing status."),
+]
+ArmOption = Annotated[bool, typer.Option(help="Arm the requested live profile.")]
+ProfileOption = Annotated[
+    str,
+    typer.Option(help="Live profile: manual or autonomous."),
+]
+ApproveAllOption = Annotated[
+    bool,
+    typer.Option(help="Approve every pending live-manual order in the selected run."),
+]
+ApproveSymbolsOption = Annotated[
+    list[str] | None,
+    typer.Option("--approve-symbol", help="Approve specific live-manual symbols."),
+]
+RejectSymbolsOption = Annotated[
+    list[str] | None,
+    typer.Option("--reject-symbol", help="Reject specific live-manual symbols."),
+]
+RunIdOption = Annotated[
+    int | None,
+    typer.Option(help="Target a specific prepared live-manual run id."),
+]
+AckDisableApprovalsOption = Annotated[
+    bool,
+    typer.Option(
+        help=(
+            "Required when arming or running live-autonomous because "
+            "per-order approval is disabled."
+        )
+    ),
 ]
 
 
@@ -190,42 +230,91 @@ def simulate(
 
 
 @app.command()
-def paper(app_home: AppHomeOption = None) -> None:
+def paper(
+    app_home: AppHomeOption = None,
+    run: RunOption = False,
+    as_of: AsOfOption = None,
+    model_version: ModelVersionOption = None,
+) -> None:
     config = initialize_config(app_home)
     initialize_database(config)
-    snapshot = simulation_status(config)
-    typer.echo(
-        json.dumps(
-            {
-                "status": "disabled",
-                "message": "Paper trading remains unavailable until Phase 6.",
-                "current_mode": snapshot["mode_state"]["current_mode"],
-                "active_freeze": snapshot["active_freeze"],
-            },
-            indent=2,
-            default=str,
-        )
-    )
+    try:
+        if run:
+            summary = paper_trade_day(
+                config,
+                as_of_date=_parse_as_of_date(as_of),
+                model_version=model_version,
+            )
+            typer.echo(json.dumps(asdict(summary), indent=2, default=str))
+            return
+        typer.echo(json.dumps(paper_status(config), indent=2, default=str))
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
-def live(app_home: AppHomeOption = None) -> None:
+def live(
+    app_home: AppHomeOption = None,
+    arm: ArmOption = False,
+    run: RunOption = False,
+    profile: ProfileOption = "manual",
+    as_of: AsOfOption = None,
+    model_version: ModelVersionOption = None,
+    run_id: RunIdOption = None,
+    approve_all: ApproveAllOption = False,
+    approve_symbol: ApproveSymbolsOption = None,
+    reject_symbol: RejectSymbolsOption = None,
+    ack_disable_approvals: AckDisableApprovalsOption = False,
+) -> None:
     config = initialize_config(app_home)
     initialize_database(config)
-    snapshot = simulation_status(config)
-    typer.echo(
-        json.dumps(
-            {
-                "status": "disabled",
-                "message": "Live trading remains unavailable until the IBKR integration phases.",
-                "current_mode": snapshot["mode_state"]["current_mode"],
-                "live_profile": snapshot["mode_state"]["live_profile"],
-                "active_freeze": snapshot["active_freeze"],
-            },
-            indent=2,
-            default=str,
-        )
-    )
+    try:
+        if arm:
+            arm_summary = arm_live_mode(
+                config,
+                profile=profile,
+                ack_disable_approvals=ack_disable_approvals,
+                source="cli",
+                reason="live arm requested from CLI",
+            )
+            typer.echo(json.dumps(asdict(arm_summary), indent=2, default=str))
+            return
+        if run:
+            if approve_all or approve_symbol or reject_symbol or run_id is not None:
+                approval_summary = approve_live_trading_run(
+                    config,
+                    run_id=run_id,
+                    approve_all=approve_all,
+                    approve_symbols=approve_symbol,
+                    reject_symbols=reject_symbol,
+                )
+                typer.echo(json.dumps(asdict(approval_summary), indent=2, default=str))
+                return
+            status_snapshot = live_status(config)
+            current_mode = None
+            if status_snapshot["mode_state"] is not None:
+                current_mode = status_snapshot["mode_state"]["current_mode"]
+            if current_mode == "live-autonomous":
+                run_summary = run_live_trading_day(
+                    config,
+                    as_of_date=_parse_as_of_date(as_of),
+                    model_version=model_version,
+                    ack_disable_approvals=ack_disable_approvals,
+                )
+                typer.echo(json.dumps(asdict(run_summary), indent=2, default=str))
+                return
+            preparation_summary = prepare_live_trading_day(
+                config,
+                as_of_date=_parse_as_of_date(as_of),
+                model_version=model_version,
+            )
+            typer.echo(json.dumps(asdict(preparation_summary), indent=2, default=str))
+            return
+        typer.echo(json.dumps(live_status(config), indent=2, default=str))
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
@@ -237,6 +326,8 @@ def report(app_home: AppHomeOption = None) -> None:
             {
                 "models": model_status(config),
                 "simulation": simulation_status(config),
+                "paper": paper_status(config),
+                "live": live_status(config),
             },
             indent=2,
             default=str,
