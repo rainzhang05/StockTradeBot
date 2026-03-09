@@ -94,6 +94,12 @@ The following commands are part of the target stable interface:
   - checks environment readiness, config completeness, broker reachability, filesystem permissions, and data/provider health
 - `stocktradebot backfill`
   - runs market-data backfill jobs for universe snapshots, prices, corporate actions, and fundamentals
+- `stocktradebot intraday-backfill`
+  - runs intraday market-data backfill jobs for 15-minute or 1-hour research bars plus quality reporting
+- `stocktradebot intraday-dataset`
+  - builds an intraday dataset snapshot for a requested research frequency and as-of date
+- `stocktradebot intraday-validate`
+  - runs intraday walk-forward validation and emits an intraday validation artifact
 - `stocktradebot train`
   - runs model training, validation, and registry publication for a specified dataset/feature version
 - `stocktradebot backtest`
