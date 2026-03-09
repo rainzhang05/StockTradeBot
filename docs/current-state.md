@@ -6,11 +6,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - Date: 2026-03-09
 - Branch: `main`
-- Repository state: Phase 5 portfolio, risk, and simulation execution implemented
-- Application code: package, CLI, API, runtime, storage, frontend workspace, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, and simulation execution created
+- Repository state: Phase 6 IBKR paper/live boundary implemented
+- Application code: package, CLI, API, runtime, storage, frontend workspace, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, and live-autonomous gating created
 - CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend checks, and package verification
-- Tests: backend and frontend verification suites created through Phase 5
-- Database schema: Phase 5 SQLite schema and Alembic migrations created
+- Tests: backend and frontend verification suites created through Phase 6
+- Database schema: Phase 6 SQLite schema and Alembic migrations created
 - Frontend: React/Vite placeholder app created under `frontend/` and served by the Python runtime when built
 
 ## Completed Work
@@ -36,6 +36,14 @@ This file describes the repository as it exists now. Update it at the end of eve
 - implemented the `stocktradebot train`, `stocktradebot backtest`, `stocktradebot simulate`, and `stocktradebot report` Phase 5 flows plus portfolio, risk, order, fill, and simulation API endpoints
 - implemented Phase 5 portfolio construction with regime-aware exposure, position caps, sector caps, turnover throttling, defensive allocation support, persistent mode state, risk freeze persistence, simulated order intents, and simulated fills
 - added Phase 5 unit and integration tests covering portfolio constraints, risk freezes, full simulation flow, and CLI/API behavior
+- added broker configuration for the IBKR Client Portal gateway, paper and live account ids, operator identity, and live gate thresholds
+- added Phase 6 storage for broker account snapshots, broker position snapshots, broker orders, order approvals, and mode transition audit events
+- added an IBKR Client Portal HTTP client plus a broker adapter service layer that can be swapped with fakes in tests
+- implemented `stocktradebot paper` status and run flows, broker-state synchronization, and persisted broker order/fill telemetry
+- implemented `stocktradebot live` status, arming, live-manual preparation, approval submission, and live-autonomous gate enforcement
+- added broker, paper, and live API endpoints plus runtime/doctor broker health reporting
+- updated promotion-gate evaluation so paper safe-day history now comes from persisted paper-run outcomes rather than a hard-coded placeholder
+- added Phase 6 broker integration tests for paper execution, live-manual approvals, live-autonomous blocking, IBKR client parsing, and CLI/API control surfaces
 
 ## Subsystem Status Matrix
 
@@ -43,15 +51,15 @@ This file describes the repository as it exists now. Update it at the end of eve
 | --- | --- | --- |
 | Governance docs | Complete for Phase 0 | Core doc set exists and defines repo operating rules |
 | Python package | Complete for Phase 1 | `pyproject.toml`, editable install metadata, and CLI entrypoint exist |
-| Backend API | Complete for Phase 5 | FastAPI app exposes health, setup, config, market-data, dataset, model, validation, backtest, risk, portfolio, order, fill, and simulation endpoints plus frontend serving |
-| Database/storage | Complete for Phase 5 | SQLite bootstrap, Alembic migrations, market-data tables, dataset tables, model registry tables, mode state, freeze state, simulation runs, and raw/artifact storage exist |
+| Backend API | Complete for Phase 6 | FastAPI app exposes health, setup, config, market-data, dataset, model, validation, backtest, risk, portfolio, order, fill, broker, paper, live, and frontend-serving endpoints |
+| Database/storage | Complete for Phase 6 | SQLite bootstrap, Alembic migrations, market-data tables, dataset tables, model registry tables, mode state, freeze state, simulation runs, broker snapshots, broker orders, approvals, transition audit, and raw/artifact storage exist |
 | Data ingestion | Complete for Phase 3 | Provider adapters, raw payload persistence, canonical daily bars, incidents, universe snapshots, and SEC fundamentals are implemented |
 | Features/fundamentals | Complete for Phase 3 | Availability-aware feature generation, labels, dataset lineage, and artifact export are implemented |
 | Models/backtesting | Complete for Phase 4 | Deterministic baseline training, walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
-| Portfolio/risk/execution | Complete for Phase 5 | Regime-aware portfolio construction, risk freeze engine, simulation runs, order intents, fills, and trading status surfaces are implemented |
-| IBKR integration | Not started | No broker code yet |
+| Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
+| IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
 | Frontend/UI | Complete for Phase 1 | React/Vite placeholder exists in `frontend/`; production dashboard not started |
-| Tests/coverage | Complete for Phase 5 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest |
+| Tests/coverage | Complete for Phase 6 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest |
 | GitHub Actions | Complete for Phase 4 | Focused workflows cover backend quality, backend tests, frontend checks, and package build |
 
 ## Active Constraints
@@ -65,33 +73,36 @@ This file describes the repository as it exists now. Update it at the end of eve
 - repository-wide test coverage target is `>= 80%` once code and tests exist
 - verified canonical bars still require a corroborating secondary provider; the default Stooq-only setup yields provisional bars until a secondary source is enabled
 - dataset builds require a prior backfill because the feature pipeline depends on persisted canonical bars and universe snapshots
-- simulation mode may use research-only models under the current default config, but paper and live remain disabled until later phases
-- model promotion remains research-only because paper-trading gate days are still zero and no IBKR execution path exists yet
+- simulation mode may use research-only models under the current default config
+- paper mode requires a configured IBKR paper account and authenticated local gateway access
+- live-manual requires explicit arming, a candidate model, no active freeze, enough safe paper days, and operator approval before submission
+- live-autonomous remains blocked unless the stricter autonomous gates are satisfied and the operator explicitly acknowledges approval bypass
 
 ## Known Gaps
 
-- no IBKR paper or live broker integration exists yet
-- no paper-trading loop exists yet, so promotion eligibility is intentionally blocked even when backtests are positive
 - the frontend is still a placeholder shell rather than the operator dashboard
+- live-manual approvals currently exist only through CLI and API flows; the dedicated operator dashboard is not implemented yet
+- live-autonomous execution support exists, but a fresh repository will still block it because the stricter safe-day requirements are intentionally unmet
+- the IBKR adapter assumes a local authenticated Client Portal Gateway and does not yet manage gateway startup or login orchestration
 - the built-in stock candidate seed list is a bootstrap set rather than a full ~300-name universe; wider coverage depends on configuring more candidate symbols
 - background scheduling is still limited to the skeleton runtime; backfill, training, backtests, and simulations are currently CLI/API driven rather than scheduler-driven
 
 ## Next Milestone
 
-- start Phase 6 from `docs/roadmap.md`
-- connect the decision engine to IBKR paper and live boundaries safely, while keeping live disabled by default
+- start Phase 7 from `docs/roadmap.md`
+- build the operator dashboard for setup, broker health, paper/live controls, approvals, and risk review
 
 ## Verification Status
 
 - documentation consistency review: completed manually
 - file/path validation for referenced docs: completed for `docs/README.md` links
 - backend checks: `make backend-quality` and `make backend-tests` passed locally
-- coverage check: passed locally at `85.15%`
+- coverage check: passed locally at `82.10%`
 - frontend checks: `npm run lint`, `npm run test -- --run`, and `npm run build` passed locally in `frontend/`
 - package build: `make package-check` passed locally
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
-- CLI smoke verification: `stocktradebot init`, `stocktradebot doctor`, `stocktradebot status`, `stocktradebot paper`, `stocktradebot live`, and `stocktradebot simulate --as-of 2026-04-15` were checked locally against a fresh temp app home; `simulate` failed cleanly with `Run backfill first.` when prerequisites were missing
+- Phase 6 integration verification: full pytest suite passed locally, including paper execution, live-manual preparation and approval, API control surfaces, and IBKR client parsing
 
 ## Last Updated Because
 
-- 2026-03-09: completed the Phase 5 portfolio construction, risk freeze engine, simulation execution stack, and related verification updates
+- 2026-03-09: completed the Phase 6 broker integration, paper execution flow, live-manual approvals, live-autonomous gating, and related verification updates
