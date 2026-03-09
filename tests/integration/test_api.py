@@ -20,6 +20,10 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     universe = client.get("/api/v1/market-data/universe/latest")
     latest_dataset = client.get("/api/v1/models/datasets/latest")
     versions = client.get("/api/v1/models/versions")
+    models_status = client.get("/api/v1/models/status")
+    latest_model = client.get("/api/v1/models/latest")
+    latest_validation = client.get("/api/v1/models/validations/latest")
+    latest_backtest = client.get("/api/v1/models/backtests/latest")
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
@@ -39,6 +43,14 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert versions.status_code == 200
     assert versions.json()["feature_set_versions"] == []
     assert versions.json()["label_versions"] == []
+    assert models_status.status_code == 200
+    assert models_status.json()["latest_model"] is None
+    assert latest_model.status_code == 200
+    assert latest_model.json()["model"] is None
+    assert latest_validation.status_code == 200
+    assert latest_validation.json()["validation"] is None
+    assert latest_backtest.status_code == 200
+    assert latest_backtest.json()["backtest"] is None
 
 
 def test_api_health_reports_runtime_override(isolated_app_home) -> None:
@@ -84,3 +96,22 @@ def test_dataset_build_endpoint_requires_backfill_first(isolated_app_home) -> No
 
     assert response.status_code == 409
     assert response.json()["detail"] == "No universe snapshots are available. Run backfill first."
+
+
+def test_model_train_and_backtest_endpoints_require_research_prerequisites(
+    isolated_app_home,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config))
+
+    train_response = client.post("/api/v1/models/train", params={"as_of": "2026-03-09"})
+    backtest_response = client.post("/api/v1/models/backtests/run")
+
+    assert train_response.status_code == 409
+    assert (
+        train_response.json()["detail"]
+        == "No universe snapshots are available. Run backfill first."
+    )
+    assert backtest_response.status_code == 409
+    assert backtest_response.json()["detail"] == "No trained model is available. Run train first."
