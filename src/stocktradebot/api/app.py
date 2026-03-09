@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from stocktradebot import __version__
 from stocktradebot.config import AppConfig, load_config
 from stocktradebot.data import market_data_status
+from stocktradebot.execution import simulate_trading_day, simulation_status
 from stocktradebot.features import build_dataset_snapshot, dataset_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
 from stocktradebot.models import backtest_model, model_status, train_model
@@ -61,6 +62,10 @@ def create_app(
     def system_status() -> dict[str, object]:
         return runtime_status(app_config.app_home)
 
+    @app.get("/api/v1/system/mode")
+    def system_mode() -> dict[str, object]:
+        return {"mode_state": simulation_status(app_config)["mode_state"]}
+
     @app.get("/api/v1/market-data/status")
     def market_data_job_status() -> dict[str, object]:
         return market_data_status(app_config)
@@ -107,6 +112,37 @@ def create_app(
         snapshot = model_status(app_config)
         return {"backtest": snapshot["latest_backtest_run"]}
 
+    @app.get("/api/v1/risk/status")
+    def risk_status() -> dict[str, object]:
+        snapshot = simulation_status(app_config)
+        return {
+            "mode_state": snapshot["mode_state"],
+            "active_freeze": snapshot["active_freeze"],
+        }
+
+    @app.get("/api/v1/portfolio/status")
+    def portfolio_status() -> dict[str, object]:
+        snapshot = simulation_status(app_config)
+        return {
+            "latest_run": snapshot["latest_run"],
+            "latest_target_snapshot": snapshot["latest_target_snapshot"],
+        }
+
+    @app.get("/api/v1/portfolio/targets/latest")
+    def latest_target_portfolio() -> dict[str, object]:
+        snapshot = simulation_status(app_config)
+        return {"snapshot": snapshot["latest_target_snapshot"]}
+
+    @app.get("/api/v1/orders/latest")
+    def latest_orders() -> dict[str, object]:
+        snapshot = simulation_status(app_config)
+        return {"items": snapshot["latest_orders"]}
+
+    @app.get("/api/v1/fills/latest")
+    def latest_fills() -> dict[str, object]:
+        snapshot = simulation_status(app_config)
+        return {"items": snapshot["latest_fills"]}
+
     @app.post("/api/v1/models/datasets/build")
     def build_dataset(as_of: str | None = None) -> dict[str, object]:
         try:
@@ -138,6 +174,25 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"backtest_run": asdict(summary)}
+
+    @app.post("/api/v1/portfolio/simulations/run")
+    def run_simulation(
+        as_of: str | None = None,
+        model_version: str | None = None,
+    ) -> dict[str, object]:
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = simulate_trading_day(
+                app_config,
+                as_of_date=parsed_date,
+                model_version=model_version,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"simulation_run": asdict(summary)}
 
     @app.get("/", response_class=HTMLResponse, response_model=None)
     def root() -> Response:
