@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from stocktradebot import __version__
 from stocktradebot.config import AppConfig, load_config
 from stocktradebot.data import market_data_status
+from stocktradebot.features import build_dataset_snapshot, dataset_status
 from stocktradebot.frontend import find_frontend_dist, render_placeholder_html
 from stocktradebot.runtime import build_ui_url, collect_doctor_checks, runtime_status
 
@@ -71,6 +73,31 @@ def create_app(
     def latest_universe_snapshot() -> dict[str, object]:
         snapshot = market_data_status(app_config, incident_limit=0)
         return {"snapshot": snapshot["latest_universe_snapshot"]}
+
+    @app.get("/api/v1/models/datasets/latest")
+    def latest_dataset_snapshot() -> dict[str, object]:
+        snapshot = dataset_status(app_config)
+        return {"snapshot": snapshot["latest_dataset_snapshot"]}
+
+    @app.get("/api/v1/models/versions")
+    def dataset_versions() -> dict[str, object]:
+        snapshot = dataset_status(app_config)
+        return {
+            "feature_set_versions": snapshot["feature_set_versions"],
+            "label_versions": snapshot["label_versions"],
+        }
+
+    @app.post("/api/v1/models/datasets/build")
+    def build_dataset(as_of: str | None = None) -> dict[str, object]:
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = build_dataset_snapshot(app_config, as_of_date=parsed_date)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"snapshot": asdict(summary)}
 
     @app.get("/", response_class=HTMLResponse, response_model=None)
     def root() -> Response:
