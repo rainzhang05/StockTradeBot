@@ -7,6 +7,7 @@ from stocktradebot.config import AppConfig, initialize_config, load_config
 from stocktradebot.data import market_data_status
 from stocktradebot.data.providers import build_provider_registry
 from stocktradebot.features import dataset_status
+from stocktradebot.models import model_status
 from stocktradebot.storage import (
     database_exists,
     database_is_reachable,
@@ -47,7 +48,7 @@ def prepare_runtime(
 ) -> RuntimeBootstrap:
     config = initialize_config(app_home)
     initialize_database(config)
-    record_audit_event(config, "runtime", "phase 1 runtime prepared")
+    record_audit_event(config, "runtime", "runtime prepared")
     checks = collect_doctor_checks(config)
     return RuntimeBootstrap(
         config=config,
@@ -100,6 +101,16 @@ def collect_doctor_checks(config: AppConfig) -> list[DoctorCheck]:
             config.dataset_artifacts_dir.exists(),
             f"datasets: {config.dataset_artifacts_dir}",
         ),
+        DoctorCheck(
+            "model-artifacts-dir",
+            config.model_artifacts_dir.exists(),
+            f"models: {config.model_artifacts_dir}",
+        ),
+        DoctorCheck(
+            "report-artifacts-dir",
+            config.report_artifacts_dir.exists(),
+            f"reports: {config.report_artifacts_dir}",
+        ),
     ]
     return checks
 
@@ -118,4 +129,5 @@ def runtime_status(app_home: Path | None = None) -> dict[str, object]:
         "checks": [asdict(check) for check in checks],
         "market_data": market_data_status(config) if has_database else None,
         "datasets": dataset_status(config) if has_database else None,
+        "models": model_status(config) if has_database else None,
     }
