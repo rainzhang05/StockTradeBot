@@ -39,6 +39,11 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     config.portfolio.symbol_sectors = {"AAPL": "Technology"}
     config.risk.allow_research_models_in_simulation = False
     config.execution.base_slippage_bps = 7.5
+    config.broker.enabled = True
+    config.broker.paper_account_id = "DU1234567"
+    config.broker.live_account_id = "U1234567"
+    config.broker.gateway.base_url = "https://127.0.0.1:5000/v1/api"
+    config.broker.live_manual_min_paper_days = 45
     config.save()
 
     loaded = load_config(isolated_app_home)
@@ -57,3 +62,8 @@ def test_load_config_round_trips_overrides(isolated_app_home: Path) -> None:
     assert loaded.portfolio.symbol_sectors["AAPL"] == "Technology"
     assert loaded.risk.allow_research_models_in_simulation is False
     assert loaded.execution.base_slippage_bps == 7.5
+    assert loaded.broker.enabled is True
+    assert loaded.broker.paper_account_id == "DU1234567"
+    assert loaded.broker.live_account_id == "U1234567"
+    assert loaded.broker.gateway.base_url == "https://127.0.0.1:5000/v1/api"
+    assert loaded.broker.live_manual_min_paper_days == 45
