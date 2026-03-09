@@ -6,11 +6,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - Date: 2026-03-09
 - Branch: `main`
-- Repository state: Phase 8 hardening and release readiness implemented
-- Application code: package, CLI, API, runtime, storage, operator frontend, packaged frontend asset serving, structured operational logging, market-data pipeline, fundamentals ingestion, dataset generation, model training, walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
+- Repository state: Phase 9 intraday research expansion implemented
+- Application code: package, CLI, API, runtime, storage, operator frontend, packaged frontend asset serving, structured operational logging, daily and intraday market-data pipelines, fundamentals ingestion, daily and intraday dataset generation, model training, daily and intraday walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
 - CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, and package verification
-- Tests: backend and frontend verification suites created through Phase 7
-- Database schema: Phase 6 SQLite schema and Alembic migrations created
+- Tests: backend and frontend verification suites created through Phase 9
+- Database schema: Phase 9 SQLite schema and Alembic migrations created
 - Frontend: React/Vite operator dashboard created under `frontend/` and served by the Python runtime when built
 
 ## Completed Work
@@ -56,6 +56,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 - hardened package verification to build the frontend, build the wheel, install it in isolation, and smoke-test the installed runtime UI path
 - fixed editable-install metadata generation so backend workflows and fresh source installs no longer require `frontend/dist` to exist before `pip install -e ".[dev]"`
 - added operator guide, troubleshooting guidance, and an explicit release process for the local-first shipped workflow
+- added intraday frequency specifications, intraday research configuration, and storage metadata for per-frequency backfills, datasets, validations, model training runs, and backtests
+- added Alpha Vantage intraday provider support, intraday observation/canonical tables, Phase 9 Alembic migration, and session-level intraday quality reports
+- implemented intraday canonicalization, intraday market-data backfill/status flows, and fallback universe-snapshot handling so research can bootstrap from the earliest available universe snapshot when historical snapshot coverage is sparse
+- implemented intraday feature generation, label generation, dataset artifact export, walk-forward validation, and API/CLI entrypoints for intraday backfill, dataset builds, and validation runs
+- added Phase 9 unit and integration coverage for intraday canonicalization, research flow, API surfaces, CLI surfaces, and typing/lint verification for the new intraday modules
 
 ## Subsystem Status Matrix
 
@@ -63,11 +68,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 | --- | --- | --- |
 | Governance docs | Complete for Phase 0 | Core doc set exists and defines repo operating rules |
 | Python package | Complete for Phase 1 | `pyproject.toml`, editable install metadata, and CLI entrypoint exist |
-| Backend API | Complete for Phase 6 | FastAPI app exposes health, setup, config, market-data, dataset, model, validation, backtest, risk, portfolio, order, fill, broker, paper, live, and frontend-serving endpoints |
-| Database/storage | Complete for Phase 6 | SQLite bootstrap, Alembic migrations, market-data tables, dataset tables, model registry tables, mode state, freeze state, simulation runs, broker snapshots, broker orders, approvals, transition audit, and raw/artifact storage exist |
-| Data ingestion | Complete for Phase 3 | Provider adapters, raw payload persistence, canonical daily bars, incidents, universe snapshots, and SEC fundamentals are implemented |
-| Features/fundamentals | Complete for Phase 3 | Availability-aware feature generation, labels, dataset lineage, and artifact export are implemented |
-| Models/backtesting | Complete for Phase 4 | Deterministic baseline training, walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
+| Backend API | Complete for Phase 9 | FastAPI app exposes health, setup, config, daily and intraday market-data, daily and intraday dataset, daily and intraday validation, backtest, risk, portfolio, order, fill, broker, paper, live, and frontend-serving endpoints |
+| Database/storage | Complete for Phase 9 | SQLite bootstrap, Alembic migrations, daily and intraday market-data tables, dataset tables, model registry tables, mode state, freeze state, simulation runs, broker snapshots, broker orders, approvals, transition audit, and raw/artifact storage exist |
+| Data ingestion | Complete for Phase 9 | Provider adapters, raw payload persistence, canonical daily bars, canonical intraday bars, incidents, universe snapshots, SEC fundamentals, and intraday quality reporting are implemented |
+| Features/fundamentals | Complete for Phase 9 | Availability-aware daily and intraday feature generation, labels, dataset lineage, and artifact export are implemented |
+| Models/backtesting | Complete for Phase 9 | Deterministic baseline training, daily and intraday walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
 | Frontend/UI | Complete for Phase 8 | Operator dashboard, setup flow, control screens, live approval UX, and release-packaged frontend serving are implemented |
@@ -79,12 +84,13 @@ This file describes the repository as it exists now. Update it at the end of eve
 - v1 must remain single-user and local-first
 - v1 trading is regular-hours-only
 - free-source-only market-data policy is in force
-- v1 research and promotion are daily-first
+- v1 production trading and promotion remain daily-first even though intraday research and validation are now supported
 - approximate point-in-time fundamentals are allowed only with conservative availability handling
 - live-manual is the default live profile; live-autonomous requires stricter gates
 - repository-wide test coverage target is `>= 80%` once code and tests exist
 - verified canonical bars still require a corroborating secondary provider; the default Stooq-only setup yields provisional bars until a secondary source is enabled
 - dataset builds require a prior backfill because the feature pipeline depends on persisted canonical bars and universe snapshots
+- intraday research currently depends on free-source intraday coverage quality and can fall back to the earliest available universe snapshot when older historical snapshot coverage is missing
 - simulation mode may use research-only models under the current default config
 - paper mode requires a configured IBKR paper account and authenticated local gateway access
 - live-manual requires explicit arming, a candidate model, no active freeze, enough safe paper days, and operator approval before submission
@@ -100,18 +106,19 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Next Milestone
 
-- start Phase 9 from `docs/roadmap.md`
-- extend the daily-first system into promotable intraday research only after free-source feasibility and data-quality rules are defined
+- Phase 9 is implemented; the next roadmap phase is not yet defined in `docs/roadmap.md`
+- preserve the daily-first production baseline while deciding whether any post-Phase 9 expansion is warranted
 
 ## Verification Status
 
 - documentation consistency review: completed manually
 - file/path validation for referenced docs: completed for `docs/README.md` links
 - backend checks: `make backend-quality` and `make backend-tests` passed locally
-- coverage check: passed locally at `82.13%`
+- coverage check: passed locally at `81.43%`
 - frontend checks: `npm run lint`, `npm run test -- --run`, and `npm run build` passed locally in `frontend/`
 - frontend browser E2E: `make frontend-e2e` passed locally
 - package build: `make package-check` passed locally
+- repository verification: `make check` passed locally after the Phase 9 intraday implementation
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, and verify the installed runtime serves the bundled UI
 - editable install smoke: passed locally from a fresh source copy with `frontend/dist` removed, using `python -m pip install -e ".[dev]"` under Python 3.14
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
@@ -120,4 +127,4 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
-- 2026-03-09: fixed Hatch editable-install packaging so backend workflows succeed without a prebuilt `frontend/dist` while preserving bundled frontend release artifacts
+- 2026-03-09: implemented Phase 9 intraday research expansion, verified the full repository with `make check`, and updated the docs to reflect the new intraday data, dataset, validation, API, and CLI capabilities
