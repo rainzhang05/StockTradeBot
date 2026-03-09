@@ -313,6 +313,100 @@ class DatasetSnapshot(Base):
     )
 
 
+class ModelTrainingRun(Base):
+    __tablename__ = "model_training_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    dataset_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_snapshots.id"),
+        nullable=True,
+    )
+    model_family: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ModelRegistryEntry(Base):
+    __tablename__ = "model_registry_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    family: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    dataset_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_snapshots.id"),
+        nullable=False,
+    )
+    feature_set_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    label_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    training_start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    training_end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    training_row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False)
+    benchmark_metrics_json: Mapped[str] = mapped_column(Text, nullable=False)
+    promotion_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    promotion_reasons_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
+class ValidationRun(Base):
+    __tablename__ = "validation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    dataset_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_snapshots.id"),
+        nullable=False,
+    )
+    model_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_registry_entries.id"),
+        nullable=True,
+    )
+    fold_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    artifact_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BacktestRun(Base):
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    dataset_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_snapshots.id"),
+        nullable=False,
+    )
+    model_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_registry_entries.id"),
+        nullable=True,
+    )
+    benchmark_symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    artifact_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -332,7 +426,7 @@ def create_db_engine(config: AppConfig) -> Engine:
 def initialize_database(config: AppConfig) -> None:
     config.ensure_runtime_dirs()
     command.upgrade(alembic_config(config.database_url()), "head")
-    upsert_app_state(config, "schema_version", "phase3")
+    upsert_app_state(config, "schema_version", "phase4")
 
 
 def database_exists(config: AppConfig) -> bool:
