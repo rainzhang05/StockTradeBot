@@ -29,6 +29,7 @@ from stocktradebot.storage import (
     DatasetSnapshot,
     ModelRegistryEntry,
     ModelTrainingRun,
+    SimulationRun,
     ValidationRun,
     create_db_engine,
     database_exists,
@@ -468,6 +469,7 @@ def _promotion_reasons(
     *,
     fold_count: int,
     latest_excess_return: float,
+    paper_safe_days: int,
     config: AppConfig,
 ) -> tuple[bool, tuple[str, ...], str]:
     reasons: list[str] = []
@@ -475,9 +477,26 @@ def _promotion_reasons(
         reasons.append("insufficient_walk_forward_history")
     if latest_excess_return <= 0:
         reasons.append("latest_out_of_sample_segment_did_not_beat_benchmark")
-    reasons.append("paper_trading_history_below_required_30_days")
+    if paper_safe_days < config.broker.live_manual_min_paper_days:
+        reasons.append("paper_trading_history_below_required_30_days")
     promotion_ready = not reasons
     return promotion_ready, tuple(reasons), "research-only" if reasons else "candidate"
+
+
+def _paper_safe_day_count(session: Session) -> int:
+    safe_runs = 0
+    runs = session.scalars(
+        select(SimulationRun)
+        .where(SimulationRun.mode == "paper")
+        .order_by(SimulationRun.created_at.asc(), SimulationRun.id.asc())
+    ).all()
+    for run in runs:
+        if run.status != "completed":
+            continue
+        summary = json.loads(run.summary_json)
+        if summary.get("freeze_triggered") is False:
+            safe_runs += 1
+    return safe_runs
 
 
 def _model_artifact_payload(model: LinearModelArtifact) -> dict[str, Any]:
@@ -526,6 +545,7 @@ def _compute_validation(
     dataset_snapshot: DatasetSnapshot,
     dataset_rows: Sequence[DatasetArtifactRow],
     bars_by_symbol: dict[str, dict[date, CanonicalDailyBar]],
+    paper_safe_days: int,
 ) -> _ValidationComputation:
     folds = _build_walk_forward_folds(dataset_rows, config)
     if not folds:
@@ -598,6 +618,7 @@ def _compute_validation(
     promotion_ready, promotion_reasons, _promotion_status = _promotion_reasons(
         fold_count=len(fold_summaries),
         latest_excess_return=latest_fold_excess_return,
+        paper_safe_days=paper_safe_days,
         config=config,
     )
     report_payload = {
@@ -686,12 +707,14 @@ def train_model(
                     start_date=min(row.trade_date for row in dataset_rows),
                     end_date=max(row.trade_date for row in dataset_rows) + timedelta(days=7),
                 )
+                paper_safe_days = _paper_safe_day_count(session)
 
             validation = _compute_validation(
                 config=config,
                 dataset_snapshot=dataset_snapshot,
                 dataset_rows=dataset_rows,
                 bars_by_symbol=bars_by_symbol,
+                paper_safe_days=paper_safe_days,
             )
             validation_artifact_path = _write_json_artifact(
                 config.report_artifacts_dir,
@@ -715,6 +738,7 @@ def train_model(
             promotion_ready, promotion_reasons, promotion_status = _promotion_reasons(
                 fold_count=validation.summary.fold_count,
                 latest_excess_return=validation.summary.latest_fold_excess_return,
+                paper_safe_days=paper_safe_days,
                 config=config,
             )
             benchmark_metrics = {
