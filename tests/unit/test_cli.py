@@ -6,7 +6,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from stocktradebot.cli import app
-from stocktradebot.data.models import BackfillSummary, DatasetSnapshotSummary
+from stocktradebot.data.models import BackfillSummary
+from stocktradebot.models import BacktestRunSummary, TrainingRunSummary
 
 runner = CliRunner()
 
@@ -76,42 +77,98 @@ def test_backfill_command_runs_market_data_flow(
     assert '"canonical_count": 2' in result.stdout
 
 
-def test_train_command_builds_dataset_snapshot(
+def test_train_command_runs_training_flow(
     isolated_app_home: Path,
     monkeypatch,
 ) -> None:
-    def fake_build_dataset_snapshot(*args, **kwargs) -> DatasetSnapshotSummary:
-        return DatasetSnapshotSummary(
-            snapshot_id=11,
-            as_of_date=date(2026, 3, 6),
-            universe_snapshot_id=3,
+    def fake_train_model(*args, **kwargs) -> TrainingRunSummary:
+        return TrainingRunSummary(
+            run_id=11,
+            dataset_snapshot_id=9,
+            model_entry_id=4,
+            model_version="linear-correlation-v1-test",
+            validation_run_id=7,
+            backtest_run_id=8,
             feature_set_version="daily-core-v1",
             label_version="forward-return-v1",
-            row_count=42,
-            null_statistics={"feature:sector_relative_20d": 42},
-            artifact_path="artifacts/datasets/example.jsonl",
-            metadata={"symbol_count": 2},
+            artifact_path="artifacts/models/example.json",
+            promotion_status="research-only",
+            promotion_reasons=("paper_trading_history_below_required_30_days",),
+            metrics={"total_return": 0.12},
+            benchmark_metrics={"benchmark_return": 0.07},
+            metadata={"fold_count": 2},
         )
 
-    monkeypatch.setattr("stocktradebot.cli.build_dataset_snapshot", fake_build_dataset_snapshot)
+    monkeypatch.setattr("stocktradebot.cli.train_model", fake_train_model)
 
     result = runner.invoke(app, ["train", "--as-of", "2026-03-06"])
 
     assert result.exit_code == 0
-    assert '"snapshot_id": 11' in result.stdout
-    assert '"row_count": 42' in result.stdout
+    assert '"run_id": 11' in result.stdout
+    assert '"model_version": "linear-correlation-v1-test"' in result.stdout
 
 
 def test_train_command_reports_missing_backfill_prerequisite(
     isolated_app_home: Path,
     monkeypatch,
 ) -> None:
-    def fake_build_dataset_snapshot(*args, **kwargs) -> DatasetSnapshotSummary:
+    def fake_train_model(*args, **kwargs) -> TrainingRunSummary:
         raise RuntimeError("No universe snapshots are available. Run backfill first.")
 
-    monkeypatch.setattr("stocktradebot.cli.build_dataset_snapshot", fake_build_dataset_snapshot)
+    monkeypatch.setattr("stocktradebot.cli.train_model", fake_train_model)
 
     result = runner.invoke(app, ["train", "--as-of", "2026-03-06"])
 
     assert result.exit_code == 1
     assert "Run backfill first." in result.stderr
+
+
+def test_backtest_command_returns_backtest_summary(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    def fake_backtest_model(*args, **kwargs) -> BacktestRunSummary:
+        return BacktestRunSummary(
+            run_id=12,
+            model_version="linear-correlation-v1-test",
+            dataset_snapshot_id=9,
+            mode="static-model",
+            start_date=date(2026, 2, 1),
+            end_date=date(2026, 3, 6),
+            benchmark_symbol="SPY",
+            total_return=0.08,
+            benchmark_return=0.03,
+            excess_return=0.05,
+            annualized_return=0.44,
+            annualized_volatility=0.12,
+            sharpe_ratio=1.8,
+            max_drawdown=-0.04,
+            turnover_ratio=0.16,
+            trade_count=18,
+            average_positions=2.0,
+            artifact_path="artifacts/reports/example.json",
+            metadata={"event_count": 20},
+        )
+
+    monkeypatch.setattr("stocktradebot.cli.backtest_model", fake_backtest_model)
+
+    result = runner.invoke(app, ["backtest", "--model-version", "linear-correlation-v1-test"])
+
+    assert result.exit_code == 0
+    assert '"run_id": 12' in result.stdout
+    assert '"mode": "static-model"' in result.stdout
+
+
+def test_report_command_returns_model_status(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stocktradebot.cli.model_status",
+        lambda *_args, **_kwargs: {"latest_model": {"version": "linear-correlation-v1-test"}},
+    )
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 0
+    assert '"linear-correlation-v1-test"' in result.stdout
