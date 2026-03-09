@@ -198,6 +198,121 @@ class UniverseSnapshotMember(Base):
     latest_validation_tier: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
+class FundamentalObservation(Base):
+    __tablename__ = "fundamental_observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    metric_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_concept: Mapped[str] = mapped_column(String(128), nullable=False)
+    fiscal_period_end: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    fiscal_period_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+    unit: Mapped[str] = mapped_column(String(16), nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    form_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    accession: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    payload_id: Mapped[int | None] = mapped_column(
+        ForeignKey("provider_payloads.id"),
+        nullable=True,
+    )
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class FeatureSetVersion(Base):
+    __tablename__ = "feature_set_versions"
+
+    version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    definition_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
+class FeatureSnapshotRow(Base):
+    __tablename__ = "feature_snapshot_rows"
+
+    feature_set_version: Mapped[str] = mapped_column(
+        ForeignKey("feature_set_versions.version"),
+        primary_key=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    universe_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("universe_snapshots.id"),
+        nullable=True,
+    )
+    values_json: Mapped[str] = mapped_column(Text, nullable=False)
+    fundamentals_available_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class LabelVersion(Base):
+    __tablename__ = "label_versions"
+
+    version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    definition_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
+class LabelSnapshotRow(Base):
+    __tablename__ = "label_snapshot_rows"
+
+    label_version: Mapped[str] = mapped_column(
+        ForeignKey("label_versions.version"),
+        primary_key=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    values_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class DatasetSnapshot(Base):
+    __tablename__ = "dataset_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    universe_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("universe_snapshots.id"),
+        nullable=True,
+    )
+    feature_set_version: Mapped[str] = mapped_column(
+        ForeignKey("feature_set_versions.version"),
+        nullable=False,
+    )
+    label_version: Mapped[str] = mapped_column(
+        ForeignKey("label_versions.version"),
+        nullable=False,
+    )
+    canonicalization_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    generation_code_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    null_statistics_json: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -217,7 +332,7 @@ def create_db_engine(config: AppConfig) -> Engine:
 def initialize_database(config: AppConfig) -> None:
     config.ensure_runtime_dirs()
     command.upgrade(alembic_config(config.database_url()), "head")
-    upsert_app_state(config, "schema_version", "phase2")
+    upsert_app_state(config, "schema_version", "phase3")
 
 
 def database_exists(config: AppConfig) -> bool:
