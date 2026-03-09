@@ -6,7 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from stocktradebot.cli import app
-from stocktradebot.data.models import BackfillSummary
+from stocktradebot.data.models import BackfillSummary, DatasetSnapshotSummary
 
 runner = CliRunner()
 
@@ -58,6 +58,8 @@ def test_backfill_command_runs_market_data_flow(
             secondary_provider=None,
             payload_count=1,
             observation_count=2,
+            fundamentals_payload_count=0,
+            fundamentals_observation_count=0,
             canonical_count=2,
             incident_count=0,
             universe_snapshot_id=3,
@@ -72,3 +74,44 @@ def test_backfill_command_runs_market_data_flow(
     assert result.exit_code == 0
     assert '"run_id": 7' in result.stdout
     assert '"canonical_count": 2' in result.stdout
+
+
+def test_train_command_builds_dataset_snapshot(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    def fake_build_dataset_snapshot(*args, **kwargs) -> DatasetSnapshotSummary:
+        return DatasetSnapshotSummary(
+            snapshot_id=11,
+            as_of_date=date(2026, 3, 6),
+            universe_snapshot_id=3,
+            feature_set_version="daily-core-v1",
+            label_version="forward-return-v1",
+            row_count=42,
+            null_statistics={"feature:sector_relative_20d": 42},
+            artifact_path="artifacts/datasets/example.jsonl",
+            metadata={"symbol_count": 2},
+        )
+
+    monkeypatch.setattr("stocktradebot.cli.build_dataset_snapshot", fake_build_dataset_snapshot)
+
+    result = runner.invoke(app, ["train", "--as-of", "2026-03-06"])
+
+    assert result.exit_code == 0
+    assert '"snapshot_id": 11' in result.stdout
+    assert '"row_count": 42' in result.stdout
+
+
+def test_train_command_reports_missing_backfill_prerequisite(
+    isolated_app_home: Path,
+    monkeypatch,
+) -> None:
+    def fake_build_dataset_snapshot(*args, **kwargs) -> DatasetSnapshotSummary:
+        raise RuntimeError("No universe snapshots are available. Run backfill first.")
+
+    monkeypatch.setattr("stocktradebot.cli.build_dataset_snapshot", fake_build_dataset_snapshot)
+
+    result = runner.invoke(app, ["train", "--as-of", "2026-03-06"])
+
+    assert result.exit_code == 1
+    assert "Run backfill first." in result.stderr
