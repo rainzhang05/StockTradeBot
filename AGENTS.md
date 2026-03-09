@@ -43,6 +43,7 @@ Agents must:
 - follow the roadmap phase order unless the task is an urgent bug fix to already-implemented functionality
 - keep changes aligned with the documented architecture and locked decisions
 - prefer the smallest complete implementation slice that moves the roadmap forward
+- prefer multiple focused GitHub workflow files split by concern rather than one monolithic workflow file
 - update docs when implementation introduces a new decision, interface, dependency, or operational rule
 - keep the repository single-user and local-first for v1
 - preserve the free-source-only market-data constraint
@@ -63,10 +64,11 @@ After every completed modification, agents must:
 2. run all relevant tests and checks for the affected area
 3. verify repository-wide coverage remains at or above 80%
 4. verify local checks cover the same intent as the current GitHub workflows
-5. fix any failing check before declaring the work complete
-6. update `docs/current-state.md`
-7. update any affected spec document if the implementation changed the documented system shape
-8. create a small local git commit for the completed logical slice
+5. when changing CI, keep workflow responsibilities split by concern so future additions land in the appropriate workflow instead of expanding a single catch-all file
+6. fix any failing check before declaring the work complete
+7. update `docs/current-state.md`
+8. update any affected spec document if the implementation changed the documented system shape
+9. create a small local git commit for the completed logical slice
 
 If the repository does not yet contain the needed tests, workflows, or coverage harness for the changed area, agents must add them as part of the work unless the task is documentation-only.
 
