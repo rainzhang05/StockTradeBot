@@ -1,15 +1,20 @@
 # StockTradeBot
 
-Phase 1 is now scaffolded as a local-first Python package with a FastAPI runtime skeleton, SQLite bootstrap plus Alembic migration wiring, a placeholder React frontend under `frontend/`, and CI/test baselines.
+Phase 3 is implemented. The repository now includes the local-first Python package and FastAPI runtime skeleton, SQLite plus Alembic persistence, a React frontend workspace under `frontend/`, free-source daily market-data backfill, canonical daily bars with provenance and incident tracking, SEC-derived approximate fundamentals, availability-aware feature engineering, dataset snapshot lineage, and CI/test baselines.
 
 ## Quick Start
 
 ```bash
-python3 -m pip install -e ".[dev]"
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 cd frontend && npm install
 cd ..
 stocktradebot init
 stocktradebot doctor
+stocktradebot backfill --symbol AAPL --lookback-days 45 --as-of 2026-03-06
+stocktradebot train --as-of 2026-03-06
+stocktradebot status
 stocktradebot --check-only --no-browser
 ```
 
