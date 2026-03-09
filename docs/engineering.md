@@ -91,6 +91,7 @@ GitHub workflows must eventually cover:
 
 - backend lint and type-check
 - frontend lint and test
+- frontend browser end-to-end workflows
 - backend unit and integration tests
 - coverage threshold enforcement
 - build/package verification
@@ -99,6 +100,7 @@ Workflow structure rules:
 
 - split GitHub workflows by concern instead of expanding one monolithic workflow file
 - keep backend quality, backend tests, frontend checks, and packaging in separate workflow files unless there is a documented reason not to
+- keep browser-based frontend E2E in its own focused workflow instead of folding it into the frontend unit/build workflow
 - when a new subsystem requires CI coverage, add it to the closest focused workflow or create a new focused workflow if it does not fit an existing one
 
 Local developer commands must mirror CI intent closely enough that a contributor can reproduce failures before pushing.
