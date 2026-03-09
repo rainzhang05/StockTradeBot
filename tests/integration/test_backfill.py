@@ -140,6 +140,8 @@ def test_backfill_market_data_persists_payloads_and_universe(isolated_app_home: 
     )
 
     assert summary.canonical_count == 8
+    assert summary.fundamentals_payload_count == 0
+    assert summary.fundamentals_observation_count == 0
     assert summary.validation_counts == {"provisional": 2, "quarantined": 2, "verified": 4}
     assert summary.incident_count == 2
     assert summary.universe_snapshot_id is not None
@@ -148,6 +150,7 @@ def test_backfill_market_data_persists_payloads_and_universe(isolated_app_home: 
 
     status = market_data_status(config)
     assert status["latest_run"]["status"] == "completed"
+    assert status["fundamentals_observation_count"] == 0
     assert status["validation_counts"] == {"provisional": 2, "quarantined": 2, "verified": 4}
     assert status["latest_universe_snapshot"]["stock_count"] == 2
     assert status["latest_universe_snapshot"]["etf_count"] == 1
