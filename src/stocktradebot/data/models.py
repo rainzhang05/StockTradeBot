@@ -30,6 +30,34 @@ class DailyBarRecord:
 
 
 @dataclass(slots=True, frozen=True)
+class IntradayBarRecord:
+    provider: str
+    symbol: str
+    frequency: str
+    bar_start: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    currency: str = "USD"
+    split_adjusted: bool = False
+
+    @property
+    def trade_date(self) -> date:
+        return self.bar_start.date()
+
+    def field_values(self) -> dict[str, float | int]:
+        return {
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
+        }
+
+
+@dataclass(slots=True, frozen=True)
 class CorporateActionRecord:
     provider: str
     symbol: str
@@ -65,6 +93,7 @@ class ProviderHistoryPayload:
     payload_format: str
     raw_payload: str
     bars: tuple[DailyBarRecord, ...] = ()
+    intraday_bars: tuple[IntradayBarRecord, ...] = ()
     corporate_actions: tuple[CorporateActionRecord, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -103,6 +132,26 @@ class CanonicalBarRecord:
     primary_provider: str
     confirming_provider: str | None
     field_provenance: dict[str, str]
+
+
+@dataclass(slots=True, frozen=True)
+class IntradayCanonicalBarRecord:
+    symbol: str
+    frequency: str
+    bar_start: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    validation_tier: str
+    primary_provider: str
+    confirming_provider: str | None
+    field_provenance: dict[str, str]
+
+    @property
+    def trade_date(self) -> date:
+        return self.bar_start.date()
 
 
 @dataclass(slots=True, frozen=True)
@@ -159,6 +208,9 @@ class BackfillSummary:
     universe_snapshot_id: int | None
     validation_counts: dict[str, int]
     providers_used: tuple[str, ...]
+    domain: str = "daily"
+    frequency: str | None = None
+    quality_report_path: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -190,3 +242,5 @@ class DatasetSnapshotSummary:
     null_statistics: dict[str, int]
     artifact_path: str
     metadata: dict[str, Any]
+    frequency: str = "daily"
+    as_of_timestamp: str | None = None
