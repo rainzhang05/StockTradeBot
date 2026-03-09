@@ -25,10 +25,10 @@ V1 requires:
 - market index/reference series for regime features and benchmarks
 - approximate point-in-time fundamentals derived from free filings data
 - universe membership snapshots
+- intraday OHLCV bars for 15-minute and 1-hour research frequencies
 
 Planned later:
 
-- promotable intraday history for 15-minute and 1-hour features
 - richer live quote and order-book aware execution data
 
 ## 3. Universe Rules
@@ -238,11 +238,16 @@ Daily-first means:
 - v1 must produce promotable datasets, models, backtests, paper runs, and live/manual workflows from daily data alone
 - intraday-aware execution logic may still exist, but promotable alpha does not depend on historical intraday breadth in v1
 
-Intraday expansion phase must add:
+Phase 9 intraday expansion adds:
 
 - free-source feasibility review
 - 15-minute and 1-hour canonicalization rules
 - intraday feature versions
 - separate validation proving intraday data quality is good enough for promotion
 
-Intraday support is not complete until that later phase exits successfully.
+Current implementation status:
+
+- intraday provider ingestion, canonicalization, dataset generation, and validation exist for `15min` and `1h`
+- intraday quality reports are persisted per backfill run and feed promotion-readiness checks for intraday validation
+- intraday research can bootstrap from the earliest available universe snapshot when a dense historical sequence of universe snapshots is not yet present
+- daily data remains the production baseline for model promotion and execution while intraday research matures
