@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from stocktradebot.api import create_app
 from stocktradebot.config import initialize_config
+from stocktradebot.data.models import BackfillSummary
 from stocktradebot.execution import (
     ModeTransitionSummary,
     SimulationRunSummary,
@@ -23,6 +24,7 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     setup = client.get("/api/v1/setup")
     status = client.get("/api/v1/system/status")
     mode = client.get("/api/v1/system/mode")
+    audit = client.get("/api/v1/system/audit")
     market_data = client.get("/api/v1/market-data/status")
     incidents = client.get("/api/v1/market-data/incidents")
     universe = client.get("/api/v1/market-data/universe/latest")
@@ -40,6 +42,7 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     broker = client.get("/api/v1/broker/status")
     paper = client.get("/api/v1/paper/status")
     live = client.get("/api/v1/live/status")
+    workspace = client.get("/api/v1/operator/workspace")
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
@@ -49,6 +52,8 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert status.json()["mode"] == "simulation"
     assert mode.status_code == 200
     assert mode.json()["mode_state"]["current_mode"] == "simulation"
+    assert audit.status_code == 200
+    assert audit.json()["items"] == []
     assert health.json()["ui_url"] == "http://127.0.0.1:8000"
     assert market_data.status_code == 200
     assert market_data.json()["latest_run"] is None
@@ -85,6 +90,9 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert paper.json()["paper_safe_days"] == 0
     assert live.status_code == 200
     assert live.json()["safe_day_counts"]["paper"] == 0
+    assert workspace.status_code == 200
+    assert workspace.json()["health"]["status"] == "ok"
+    assert workspace.json()["system"]["audit_events"] == []
 
 
 def test_api_health_reports_runtime_override(isolated_app_home) -> None:
@@ -247,3 +255,95 @@ def test_phase6_endpoints_expose_live_and_paper_controls(
     assert live_run.json()["live_preparation"]["status"] == "pending-approval"
     assert approvals.status_code == 200
     assert approvals.json()["approval_result"]["status"] == "completed"
+
+
+def test_phase7_endpoints_update_config_workspace_and_mode(
+    isolated_app_home,
+    monkeypatch,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config))
+
+    config_update = client.put(
+        "/api/v1/config",
+        json={
+            "timezone": "UTC",
+            "broker": {
+                "paper_account_id": "DU1234567",
+                "live_account_id": "U1234567",
+            },
+        },
+    )
+
+    assert config_update.status_code == 200
+    assert config_update.json()["config"]["timezone"] == "UTC"
+    assert config_update.json()["config"]["broker"]["enabled"] is False
+
+    monkeypatch.setattr(
+        "stocktradebot.api.app.enter_paper_mode",
+        lambda *_args, **_kwargs: ModeTransitionSummary(
+            previous_mode="simulation",
+            current_mode="paper",
+            requested_mode="paper",
+            live_profile="manual",
+            status="entered",
+            armed=True,
+            reason="api",
+            metadata={"detail": "paper ready"},
+        ),
+    )
+
+    mode_update = client.post("/api/v1/system/mode", params={"target_mode": "paper"})
+    workspace = client.get("/api/v1/operator/workspace")
+    audit = client.get("/api/v1/system/audit")
+
+    assert mode_update.status_code == 200
+    assert mode_update.json()["mode_transition"]["current_mode"] == "paper"
+    assert workspace.status_code == 200
+    assert workspace.json()["config"]["timezone"] == "UTC"
+    assert workspace.json()["config"]["broker"]["paper_account_id"] == "DU1234567"
+    assert audit.status_code == 200
+    assert any(item["category"] == "config" for item in audit.json()["items"])
+
+
+def test_phase7_market_data_backfill_endpoint_runs_job(
+    isolated_app_home,
+    monkeypatch,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config))
+
+    monkeypatch.setattr(
+        "stocktradebot.api.app.backfill_market_data",
+        lambda *_args, **_kwargs: BackfillSummary(
+            run_id=31,
+            as_of_date=date(2026, 4, 15),
+            requested_symbols=("AAPL", "MSFT"),
+            primary_provider="stooq",
+            secondary_provider="alpha_vantage",
+            payload_count=4,
+            observation_count=180,
+            fundamentals_payload_count=2,
+            fundamentals_observation_count=12,
+            canonical_count=90,
+            incident_count=1,
+            universe_snapshot_id=6,
+            validation_counts={"verified": 90},
+            providers_used=("stooq", "alpha_vantage"),
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/market-data/backfill",
+        params={
+            "as_of": "2026-04-15",
+            "lookback_days": 180,
+            "symbol": ["AAPL", "MSFT"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["backfill_run"]["run_id"] == 31
+    assert response.json()["backfill_run"]["canonical_count"] == 90
