@@ -700,10 +700,24 @@ def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def alembic_config(database_url: str) -> AlembicConfig:
+def package_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def migration_paths() -> tuple[Path, Path]:
+    packaged_ini = package_root() / "alembic.ini"
+    packaged_scripts = package_root() / "alembic"
+    if packaged_ini.exists() and packaged_scripts.exists():
+        return packaged_ini, packaged_scripts
+
     root = repository_root()
-    config = AlembicConfig(str(root / "alembic.ini"))
-    config.set_main_option("script_location", str(root / "alembic"))
+    return root / "alembic.ini", root / "alembic"
+
+
+def alembic_config(database_url: str) -> AlembicConfig:
+    config_path, script_location = migration_paths()
+    config = AlembicConfig(str(config_path))
+    config.set_main_option("script_location", str(script_location))
     config.attributes["database_url"] = database_url
     return config
 
