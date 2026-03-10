@@ -64,6 +64,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - simplified the frontend into `Overview`, `Stocks`, `Activity`, and `Setup` so the default UI shows only operator-essential information in a black-and-white, smooth-radius presentation aimed at non-technical users
 - removed raw JSON-style operational panels from the default operator experience and replaced them with plain-language activity summaries, essential performance cards, and stock-by-stock status actions
 - polished the operator frontend into a more production-grade visual system with a calmer header, improved spacing rhythm, consistent surfaces and radii, clearer action and mode controls, higher-contrast feedback banners, and browser-verified visual refinements across all four views
+- refined the four top-level view tabs so the active black tab remains visually fixed without any hover lift or hover-state color shift, while inactive tabs still show hover affordances
 - hardened runtime migration lookup so installed packages prefer bundled Alembic assets, fall back to repository assets only when appropriate, and fail with a clear reinstall message when both are missing
 - updated package smoke verification so installed builds must pass `stocktradebot status` and `stocktradebot --check-only --no-browser` in addition to the existing `init`, `doctor`, and bundled-frontend checks
 - corrected the persisted app-state schema marker written during database bootstrap from `phase6` to `phase9`
@@ -135,4 +136,4 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
-- 2026-03-10: refined the operator UI into a more polished production-style surface, reverified the repository with `make check`, refreshed the browser screenshot artifact, and updated the docs to reflect the latest UI state
+- 2026-03-10: refined the operator UI interaction polish so active top-level tabs no longer animate on hover, reverified the repository with `make check`, and updated the docs to reflect the latest UI state
