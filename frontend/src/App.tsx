@@ -72,6 +72,13 @@ interface ActivityItem {
   tone: Tone;
 }
 
+interface ModeOption {
+  key: string;
+  label: string;
+  detail: string;
+  tone: Tone;
+}
+
 const screens: Array<{ key: ScreenKey; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "stocks", label: "Stocks" },
@@ -451,6 +458,24 @@ function SectionCard(props: {
   );
 }
 
+function ViewIntro(props: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}): JSX.Element {
+  return (
+    <section className="card view-intro">
+      <div className="view-intro__content">
+        <p className="eyebrow">{props.eyebrow}</p>
+        <h2>{props.title}</h2>
+        <p className="view-intro__description">{props.description}</p>
+      </div>
+      {props.actions ? <div className="view-intro__actions">{props.actions}</div> : null}
+    </section>
+  );
+}
+
 function StatCard(props: {
   label: string;
   value: string;
@@ -463,6 +488,28 @@ function StatCard(props: {
       <p className="stat-card__value">{props.value}</p>
       {props.detail ? <p className="stat-card__detail">{props.detail}</p> : null}
     </article>
+  );
+}
+
+function ActionTile(props: {
+  eyebrow: string;
+  title: string;
+  detail: string;
+  tone?: Tone;
+  disabled?: boolean;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={`action-tile action-tile--${props.tone ?? "default"}`}
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      <span className="action-tile__eyebrow">{props.eyebrow}</span>
+      <span className="action-tile__title">{props.title}</span>
+      <span className="action-tile__detail">{props.detail}</span>
+    </button>
   );
 }
 
@@ -503,7 +550,7 @@ function HealthList(props: { items: Array<{ label: string; value: string; tone: 
   return (
     <div className="health-list">
       {props.items.map((item) => (
-        <article className="health-list__item" key={item.label}>
+        <article className={`health-list__item health-list__item--${item.tone}`} key={item.label}>
           <div>
             <p className="health-list__label">{item.label}</p>
             <p className="health-list__value">{item.value}</p>
@@ -523,7 +570,7 @@ function ActivityFeed(props: { items: ActivityItem[] }): JSX.Element {
   return (
     <div className="activity-list">
       {props.items.map((item) => (
-        <article className="activity-list__item" key={item.id}>
+        <article className={`activity-list__item activity-list__item--${item.tone}`} key={item.id}>
           <div className="activity-list__copy">
             <p className="activity-list__title">{item.title}</p>
             <p className="activity-list__note">{item.note}</p>
@@ -763,11 +810,31 @@ function App(): JSX.Element {
     }
   ];
 
-  const modeButtons = [
-    { key: "simulation", label: "Simulation" },
-    { key: "paper", label: "Paper" },
-    { key: "live-manual", label: "Live Manual" },
-    { key: "live-autonomous", label: "Live Auto" }
+  const modeButtons: ModeOption[] = [
+    {
+      key: "simulation",
+      label: "Simulation",
+      detail: "Keep orders local while you test model and portfolio changes.",
+      tone: "default"
+    },
+    {
+      key: "paper",
+      label: "Paper",
+      detail: "Send orders to the paper account and confirm broker connectivity.",
+      tone: "attention"
+    },
+    {
+      key: "live-manual",
+      label: "Live Manual",
+      detail: "Require explicit approval before any live order is submitted.",
+      tone: "default"
+    },
+    {
+      key: "live-autonomous",
+      label: "Live Auto",
+      detail: "Skip approval prompts and rely on the stricter live gates only.",
+      tone: "danger"
+    }
   ];
 
   if (loading && workspace === null) {
@@ -787,25 +854,38 @@ function App(): JSX.Element {
   return (
     <main className="shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">StockTradeBot</p>
-          <h1>{headlineForWorkspace(workspace)}</h1>
-          <p className="topbar__copy">{copyForWorkspace(workspace)}</p>
+        <div className="topbar__brand">
+          <div className="topbar__label-row">
+            <p className="eyebrow">StockTradeBot</p>
+            <span className="topbar__label">Local control surface</span>
+          </div>
+          <h1>Trading workspace</h1>
+          <p className="topbar__copy">
+            A focused local dashboard for mode changes, trading performance, and stock-by-stock decisions.
+          </p>
         </div>
         <div className="topbar__meta">
-          <Badge label={healthLabel(workspace)} tone={healthTone(workspace)} />
-          <Badge label={currentModeLabel(workspace)} tone={modeTone(workspace?.risk.mode_state?.current_mode)} />
-          <button
-            type="button"
-            className="button button--secondary"
-            disabled={refreshing}
-            onClick={() => void loadWorkspace(true)}
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-          <p className="topbar__timestamp">
-            Last updated {lastUpdated ? formatDateTime(lastUpdated) : "n/a"}
-          </p>
+          <div className="topbar__status-row">
+            <Badge label={healthLabel(workspace)} tone={healthTone(workspace)} />
+            <Badge label={currentModeLabel(workspace)} tone={modeTone(workspace?.risk.mode_state?.current_mode)} />
+            <Badge
+              label={workspace?.risk.active_freeze ? "Freeze active" : "No freeze"}
+              tone={workspace?.risk.active_freeze ? "danger" : "muted"}
+            />
+          </div>
+          <div className="topbar__refresh-row">
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={refreshing}
+              onClick={() => void loadWorkspace(true)}
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <p className="topbar__timestamp">
+              Last updated {lastUpdated ? formatDateTime(lastUpdated) : "n/a"}
+            </p>
+          </div>
         </div>
       </header>
 
@@ -833,7 +913,7 @@ function App(): JSX.Element {
         <div className="screen-grid">
           <section className="hero card">
             <div className="hero__copy">
-              <p className="eyebrow">Current state</p>
+              <p className="eyebrow">Overview</p>
               <h2>{headlineForWorkspace(workspace)}</h2>
               <p className="hero__description">{copyForWorkspace(workspace)}</p>
               <div className="hero__badges">
@@ -874,7 +954,7 @@ function App(): JSX.Element {
 
           <SectionCard
             title="Change mode"
-            description="Switch the system mode without leaving the main screen."
+            description="Use the safest mode that still matches what you need to do next."
             actions={
               <label className="toggle">
                 <input
@@ -886,15 +966,15 @@ function App(): JSX.Element {
               </label>
             }
           >
-            <div className="button-row">
+            <div className="mode-grid">
               {modeButtons.map((item) => (
                 <button
                   type="button"
                   key={item.key}
                   className={
-                    item.key === "live-autonomous"
-                      ? "button button--danger"
-                      : "button button--secondary"
+                    item.key === workspace?.risk.mode_state?.current_mode
+                      ? `mode-card mode-card--active mode-card--${item.tone}`
+                      : `mode-card mode-card--${item.tone}`
                   }
                   disabled={activeAction === `mode-${item.key}`}
                   onClick={() =>
@@ -905,17 +985,24 @@ function App(): JSX.Element {
                     )
                   }
                 >
-                  {activeAction === `mode-${item.key}` ? "Updating..." : item.label}
+                  <span className="mode-card__label">
+                    {activeAction === `mode-${item.key}` ? "Updating..." : item.label}
+                  </span>
+                  <span className="mode-card__detail">{item.detail}</span>
+                  <span className="mode-card__meta">
+                    {item.key === workspace?.risk.mode_state?.current_mode ? "Current mode" : "Switch mode"}
+                  </span>
                 </button>
               ))}
             </div>
           </SectionCard>
 
-          <SectionCard title="Quick actions" description="Run the main tasks without exposing raw backend details.">
-            <div className="button-grid">
-              <button
-                type="button"
-                className="button"
+          <SectionCard title="Quick actions" description="Run the essential workflows from one place without exposing backend details.">
+            <div className="action-grid">
+              <ActionTile
+                eyebrow="Data"
+                title={activeAction === "backfill" ? "Refreshing data..." : "Refresh data"}
+                detail="Pull the latest market data and update the tracked universe."
                 disabled={activeAction === "backfill"}
                 onClick={() =>
                   void runAction(
@@ -928,46 +1015,44 @@ function App(): JSX.Element {
                     "Market data refreshed.",
                   )
                 }
-              >
-                {activeAction === "backfill" ? "Refreshing data..." : "Refresh data"}
-              </button>
-              <button
-                type="button"
-                className="button"
+              />
+              <ActionTile
+                eyebrow="Research"
+                title={activeAction === "train-model" ? "Training..." : "Train model"}
+                detail="Fit the latest model version from the currently available data."
                 disabled={activeAction === "train-model"}
                 onClick={() => void runAction("train-model", () => trainModel(), "Model training completed.")}
-              >
-                {activeAction === "train-model" ? "Training..." : "Train model"}
-              </button>
-              <button
-                type="button"
-                className="button"
+              />
+              <ActionTile
+                eyebrow="Research"
+                title={activeAction === "backtest-model" ? "Running backtest..." : "Run backtest"}
+                detail="Check the latest strategy result before you move to paper or live."
                 disabled={activeAction === "backtest-model"}
                 onClick={() => void runAction("backtest-model", () => backtestModel(), "Backtest completed.")}
-              >
-                {activeAction === "backtest-model" ? "Running backtest..." : "Run backtest"}
-              </button>
-              <button
-                type="button"
-                className="button button--secondary"
+              />
+              <ActionTile
+                eyebrow="Trading"
+                title={activeAction === "simulate-run" ? "Running simulation..." : "Run simulation"}
+                detail="Preview the next trading cycle without sending broker orders."
+                tone="muted"
                 disabled={activeAction === "simulate-run"}
                 onClick={() =>
                   void runAction("simulate-run", () => runSimulation({}), "Simulation completed.")
                 }
-              >
-                {activeAction === "simulate-run" ? "Running simulation..." : "Run simulation"}
-              </button>
-              <button
-                type="button"
-                className="button button--secondary"
+              />
+              <ActionTile
+                eyebrow="Trading"
+                title={activeAction === "paper-run" ? "Running paper..." : "Run paper"}
+                detail="Send the current plan to the paper account and track the result."
+                tone="attention"
                 disabled={activeAction === "paper-run"}
                 onClick={() => void runAction("paper-run", () => runPaper({}), "Paper trading completed.")}
-              >
-                {activeAction === "paper-run" ? "Running paper..." : "Run paper"}
-              </button>
-              <button
-                type="button"
-                className="button button--secondary"
+              />
+              <ActionTile
+                eyebrow="Trading"
+                title={activeAction === "live-run" ? "Preparing live..." : "Prepare live"}
+                detail="Check gates and stage the live workflow before any real submission."
+                tone="danger"
                 disabled={activeAction === "live-run"}
                 onClick={() =>
                   void runAction(
@@ -976,9 +1061,7 @@ function App(): JSX.Element {
                     "Live workflow submitted.",
                   )
                 }
-              >
-                {activeAction === "live-run" ? "Preparing live..." : "Prepare live"}
-              </button>
+              />
             </div>
           </SectionCard>
 
@@ -1009,6 +1092,21 @@ function App(): JSX.Element {
 
       {activeScreen === "stocks" ? (
         <div className="screen-grid">
+          <ViewIntro
+            eyebrow="Stocks"
+            title="Stock status and approvals"
+            description="Review the latest signal, target, and order state for each tracked stock, then act only where approval is still needed."
+            actions={
+              pendingApprovals.length > 0 ? (
+                <Badge
+                  label={`${pendingApprovals.length} pending approval${pendingApprovals.length === 1 ? "" : "s"}`}
+                  tone="attention"
+                />
+              ) : (
+                <Badge label="No pending approvals" tone="success" />
+              )
+            }
+          />
           <SectionCard title="Stock status" description="Each stock is shown with its latest signal, target, and order state.">
             <Table
               columns={["Stock", "Score", "Target", "Price", "Value", "Current status", "Last update", "Actions"]}
@@ -1071,6 +1169,17 @@ function App(): JSX.Element {
 
       {activeScreen === "activity" ? (
         <div className="screen-grid">
+          <ViewIntro
+            eyebrow="Activity"
+            title="Performance and recent trading activity"
+            description="Keep a short record of how the strategy is performing and what the system changed most recently."
+            actions={
+              <Badge
+                label={latestRunProfit !== null ? `Latest run ${formatCurrency(latestRunProfit)}` : "No recent run"}
+                tone={valueTone(latestRunProfit)}
+              />
+            }
+          />
           <SectionCard title="Performance" description="Backtest results and the latest trading run at a glance.">
             <div className="stats-grid">
               <StatCard
@@ -1134,9 +1243,10 @@ function App(): JSX.Element {
 
       {activeScreen === "setup" ? (
         <div className="screen-grid">
-          <SectionCard
-            title="First-run checklist"
-            description="Use this order if you are setting up the app for the first time."
+          <ViewIntro
+            eyebrow="Setup"
+            title="Setup and safety defaults"
+            description="Keep paths, providers, broker details, and risk controls consistent so the rest of the workflow stays simple."
             actions={
               <button
                 type="button"
@@ -1147,6 +1257,10 @@ function App(): JSX.Element {
                 {activeAction === "save-setup" ? "Saving..." : "Save setup"}
               </button>
             }
+          />
+          <SectionCard
+            title="First-run checklist"
+            description="Use this order if you are setting up the app for the first time."
           >
             <SetupStepList items={setupSteps} />
           </SectionCard>

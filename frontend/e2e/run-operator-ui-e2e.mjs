@@ -525,7 +525,7 @@ async function main() {
     await page.getByRole("button", { name: "Train model" }).click();
     await page.getByText("Model training completed.").waitFor();
 
-    await page.getByRole("button", { name: "Paper", exact: true }).click();
+    await page.getByRole("button", { name: /^Paper/ }).click();
     await page.getByText("Paper selected.").waitFor();
 
     await page.getByRole("button", { name: /Stocks/i }).click();
