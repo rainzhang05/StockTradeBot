@@ -292,7 +292,7 @@ strong {
   color: var(--muted);
 }
 
-.tabs__item:hover {
+.tabs__item:not(.tabs__item--active):hover {
   border-color: var(--line);
   color: var(--text);
   background: rgba(255, 255, 255, 0.86);
@@ -435,7 +435,7 @@ label > span,
 .button:hover,
 .mode-card:hover,
 .action-tile:hover,
-.tabs__item:hover {
+.tabs__item:not(.tabs__item--active):hover {
   transform: translateY(-1px);
 }
 
