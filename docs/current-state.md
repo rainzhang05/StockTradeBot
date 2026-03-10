@@ -63,6 +63,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - added Phase 9 unit and integration coverage for intraday canonicalization, research flow, API surfaces, CLI surfaces, and typing/lint verification for the new intraday modules
 - simplified the frontend into `Overview`, `Stocks`, `Activity`, and `Setup` so the default UI shows only operator-essential information in a black-and-white, smooth-radius presentation aimed at non-technical users
 - removed raw JSON-style operational panels from the default operator experience and replaced them with plain-language activity summaries, essential performance cards, and stock-by-stock status actions
+- polished the operator frontend into a more production-grade visual system with a calmer header, improved spacing rhythm, consistent surfaces and radii, clearer action and mode controls, higher-contrast feedback banners, and browser-verified visual refinements across all four views
 - hardened runtime migration lookup so installed packages prefer bundled Alembic assets, fall back to repository assets only when appropriate, and fail with a clear reinstall message when both are missing
 - updated package smoke verification so installed builds must pass `stocktradebot status` and `stocktradebot --check-only --no-browser` in addition to the existing `init`, `doctor`, and bundled-frontend checks
 - corrected the persisted app-state schema marker written during database bootstrap from `phase6` to `phase9`
@@ -80,7 +81,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Models/backtesting | Complete for Phase 9 | Deterministic baseline training, daily and intraday walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
-| Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, and packaged frontend serving remain implemented while the default surface hides raw backend payloads and unnecessary engineering detail |
+| Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, and packaged frontend serving remain implemented while the default surface hides raw backend payloads, uses a more polished production-style visual system, and focuses on non-technical operator decisions |
 | Tests/coverage | Complete for Phase 9 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E; package smoke verification now tests installed runtime serving plus installed `status` and `--check-only` command flows; intraday research paths are covered by unit and integration tests |
 | GitHub Actions | Complete for Phase 9 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build plus installed-wheel smoke verification for the current intraday-capable codebase, including direct installed-command runtime checks |
 
@@ -126,6 +127,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - package build: `make package-check` passed locally
 - repository verification: `make check` passed locally after the Phase 9 intraday implementation
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, verify `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`, and confirm the installed runtime serves the bundled UI
+- browser screenshot review: refreshed locally via the existing Playwright E2E lane at `output/playwright/clean-operator-ui.png`
 - editable install smoke: passed locally from a fresh source copy with `frontend/dist` removed, using `python -m pip install -e ".[dev]"` under Python 3.14
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
 - backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
@@ -133,4 +135,4 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
-- 2026-03-10: simplified the operator UI for non-technical use, hardened packaged CLI bootstrap around bundled Alembic assets, verified the repository with `make check`, and updated the docs to reflect the new runtime and UI behavior
+- 2026-03-10: refined the operator UI into a more polished production-style surface, reverified the repository with `make check`, refreshed the browser screenshot artifact, and updated the docs to reflect the latest UI state
