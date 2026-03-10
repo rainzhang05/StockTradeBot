@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ApiError,
   approveLive,
   backfillMarketData,
   backtestModel,
-  buildDataset,
   fetchWorkspace,
   runLive,
   runPaper,
@@ -25,7 +25,8 @@ import type {
   WorkspaceSnapshot
 } from "./types";
 
-type ScreenKey = "setup" | "dashboard" | "portfolio" | "orders" | "research" | "data" | "system";
+type ScreenKey = "overview" | "stocks" | "activity" | "setup";
+type Tone = "default" | "success" | "attention" | "danger" | "muted";
 
 interface SetupDraft {
   timezone: string;
@@ -50,41 +51,67 @@ interface SetupDraft {
   drawdownFreeze: string;
 }
 
+interface StockRow {
+  symbol: string;
+  score: number | null;
+  targetWeight: number | null;
+  price: number | null;
+  marketValue: number | null;
+  status: string;
+  tone: Tone;
+  approvalStatus: string;
+  approval: ApprovalSnapshot | null;
+  latestAction: string;
+}
+
+interface ActivityItem {
+  id: string;
+  title: string;
+  note: string;
+  timestamp: string | null;
+  tone: Tone;
+}
+
 const screens: Array<{ key: ScreenKey; label: string }> = [
-  { key: "setup", label: "Setup" },
-  { key: "dashboard", label: "Dashboard" },
-  { key: "portfolio", label: "Portfolio" },
-  { key: "orders", label: "Orders" },
-  { key: "research", label: "Research" },
-  { key: "data", label: "Data" },
-  { key: "system", label: "System" }
+  { key: "overview", label: "Overview" },
+  { key: "stocks", label: "Stocks" },
+  { key: "activity", label: "Activity" },
+  { key: "setup", label: "Setup" }
+];
+
+const highlightedChecks = [
+  { name: "database-connectivity", label: "Database" },
+  { name: "primary-provider", label: "Market data" },
+  { name: "fundamentals-provider", label: "Fundamentals" },
+  { name: "broker-connectivity", label: "Broker" }
 ];
 
 function readHashScreen(): ScreenKey {
   const hash = window.location.hash.replace("#", "");
-  return screens.some((screen) => screen.key === hash) ? (hash as ScreenKey) : "dashboard";
+  return screens.some((screen) => screen.key === hash) ? (hash as ScreenKey) : "overview";
 }
 
 function writeHashScreen(screen: ScreenKey): void {
   window.location.hash = screen;
 }
 
-function formatCurrency(value: number | null | undefined): string {
+function formatCurrency(value: number | null | undefined, digits = 0): string {
   if (value === null || value === undefined) {
     return "n/a";
   }
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits
   }).format(value);
 }
 
-function formatPercent(value: number | null | undefined): string {
+function formatPercent(value: number | null | undefined, digits = 1): string {
   if (value === null || value === undefined) {
     return "n/a";
   }
-  return `${(value * 100).toFixed(1)}%`;
+  return `${(value * 100).toFixed(digits)}%`;
 }
 
 function formatNumber(value: number | null | undefined, digits = 2): string {
@@ -108,26 +135,6 @@ function parseSymbolList(value: string): string[] {
     .filter(Boolean);
 }
 
-function statusTone(ok: boolean): string {
-  return ok ? "neutral" : "alert";
-}
-
-function modeTone(mode: string | null | undefined): string {
-  if (!mode) {
-    return "muted";
-  }
-  if (mode.startsWith("live")) {
-    return "alert";
-  }
-  if (mode === "paper") {
-    return "accent";
-  }
-  if (mode === "frozen") {
-    return "alert";
-  }
-  return "neutral";
-}
-
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
@@ -141,6 +148,113 @@ function messageFromError(error: unknown): string {
     return error.message;
   }
   return "Unexpected error.";
+}
+
+function toTitleCase(value: string | null | undefined): string {
+  if (!value) {
+    return "n/a";
+  }
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function summaryNumber(summary: Record<string, unknown> | null | undefined, key: string): number | null {
+  const value = summary?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+function valueTone(value: number | null | undefined): Tone {
+  if (value === null || value === undefined) {
+    return "muted";
+  }
+  if (value > 0) {
+    return "success";
+  }
+  if (value < 0) {
+    return "danger";
+  }
+  return "default";
+}
+
+function statusTone(ok: boolean): Tone {
+  return ok ? "success" : "attention";
+}
+
+function modeTone(mode: string | null | undefined): Tone {
+  if (!mode) {
+    return "muted";
+  }
+  if (mode === "simulation") {
+    return "default";
+  }
+  if (mode === "paper") {
+    return "attention";
+  }
+  if (mode === "frozen") {
+    return "danger";
+  }
+  return "danger";
+}
+
+function healthTone(workspace: WorkspaceSnapshot | null): Tone {
+  if (!workspace) {
+    return "muted";
+  }
+  if (workspace.risk.active_freeze) {
+    return "danger";
+  }
+  return workspace.health.status === "ok" ? "success" : "attention";
+}
+
+function healthLabel(workspace: WorkspaceSnapshot | null): string {
+  if (!workspace) {
+    return "Loading";
+  }
+  if (workspace.risk.active_freeze) {
+    return "Frozen";
+  }
+  return workspace.health.status === "ok" ? "Ready" : "Needs attention";
+}
+
+function currentModeLabel(workspace: WorkspaceSnapshot | null): string {
+  return toTitleCase(workspace?.risk.mode_state?.current_mode ?? "simulation");
+}
+
+function headlineForWorkspace(workspace: WorkspaceSnapshot | null): string {
+  if (!workspace) {
+    return "Loading your trading workspace.";
+  }
+  if (workspace.risk.active_freeze) {
+    return "Trading is paused until the active freeze is cleared.";
+  }
+  if (workspace.health.status !== "ok") {
+    return "A few setup items still need attention before trading.";
+  }
+  return `${currentModeLabel(workspace)} mode is ready.`;
+}
+
+function copyForWorkspace(workspace: WorkspaceSnapshot | null): string {
+  if (!workspace) {
+    return "Checking local services and loading the latest status.";
+  }
+  if (workspace.risk.active_freeze) {
+    return workspace.risk.active_freeze.reason;
+  }
+  const pendingApprovals =
+    workspace.live.latest_approvals.filter((approval) => approval.status === "pending").length;
+  if (pendingApprovals > 0) {
+    return `${pendingApprovals} order${pendingApprovals === 1 ? "" : "s"} still need approval before they can be sent live.`;
+  }
+  return "The dashboard is showing only the key status, performance, and stock-level actions needed to operate the system.";
+}
+
+function configuredUniverse(config: Record<string, any> | null): string[] {
+  const universe = (config?.universe ?? {}) as Record<string, any>;
+  return [
+    ...((universe.stock_candidates ?? []) as string[]),
+    ...((universe.curated_etfs ?? []) as string[])
+  ];
 }
 
 function initialSetupDraft(config: Record<string, any> | null): SetupDraft {
@@ -177,119 +291,184 @@ function initialSetupDraft(config: Record<string, any> | null): SetupDraft {
   };
 }
 
-function StatusPill(props: { label: string; tone?: string }): JSX.Element {
-  return <span className={`status-pill status-pill--${props.tone ?? "neutral"}`}>{props.label}</span>;
+function buildActivityFeed(workspace: WorkspaceSnapshot | null): ActivityItem[] {
+  if (!workspace) {
+    return [];
+  }
+
+  const auditItems = workspace.system.audit_events.map((item: AuditEvent) => ({
+    id: `audit-${item.id}`,
+    title: item.message,
+    note: toTitleCase(item.category),
+    timestamp: item.created_at,
+    tone: "default" as Tone
+  }));
+
+  const logItems = workspace.system.logs.map((item: OperationalLogEvent, index) => ({
+    id: `log-${item.timestamp ?? "missing"}-${index}`,
+    title: item.message,
+    note: toTitleCase(item.category),
+    timestamp: item.timestamp,
+    tone:
+      item.level === "error" ? "danger" : item.level === "warning" ? "attention" : ("muted" as Tone)
+  }));
+
+  return [...auditItems, ...logItems]
+    .sort((left, right) => {
+      const leftTime = left.timestamp ? Date.parse(left.timestamp) : 0;
+      const rightTime = right.timestamp ? Date.parse(right.timestamp) : 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, 8);
 }
 
-function MetricCard(props: { label: string; value: string; detail?: string; tone?: string }): JSX.Element {
-  return (
-    <article className={`metric-card metric-card--${props.tone ?? "neutral"}`}>
-      <p className="metric-card__label">{props.label}</p>
-      <p className="metric-card__value">{props.value}</p>
-      {props.detail ? <p className="metric-card__detail">{props.detail}</p> : null}
-    </article>
-  );
+function buildStockRows(workspace: WorkspaceSnapshot | null): StockRow[] {
+  if (!workspace) {
+    return [];
+  }
+
+  const positionsBySymbol = new Map<string, PortfolioPosition>();
+  for (const position of workspace.portfolio.latest_target_snapshot?.positions ?? []) {
+    positionsBySymbol.set(position.symbol, position);
+  }
+
+  const ordersBySymbol = new Map<string, OrderSnapshot>();
+  for (const order of workspace.portfolio.latest_orders ?? []) {
+    if (!ordersBySymbol.has(order.symbol)) {
+      ordersBySymbol.set(order.symbol, order);
+    }
+  }
+
+  const fillsBySymbol = new Map<string, FillSnapshot>();
+  for (const fill of workspace.portfolio.latest_fills ?? []) {
+    if (!fillsBySymbol.has(fill.symbol)) {
+      fillsBySymbol.set(fill.symbol, fill);
+    }
+  }
+
+  const approvalsBySymbol = new Map<string, ApprovalSnapshot>();
+  for (const approval of workspace.live.latest_approvals ?? []) {
+    if (!approvalsBySymbol.has(approval.symbol)) {
+      approvalsBySymbol.set(approval.symbol, approval);
+    }
+  }
+
+  const symbols = new Set<string>([
+    ...positionsBySymbol.keys(),
+    ...ordersBySymbol.keys(),
+    ...fillsBySymbol.keys(),
+    ...approvalsBySymbol.keys()
+  ]);
+
+  return [...symbols]
+    .map((symbol) => {
+      const position = positionsBySymbol.get(symbol) ?? null;
+      const order = ordersBySymbol.get(symbol) ?? null;
+      const fill = fillsBySymbol.get(symbol) ?? null;
+      const approval = approvalsBySymbol.get(symbol) ?? null;
+
+      let status = "Watching";
+      let tone: Tone = "muted";
+
+      if (workspace.risk.active_freeze) {
+        status = "Paused";
+        tone = "danger";
+      } else if (approval?.status === "pending") {
+        status = "Awaiting approval";
+        tone = "attention";
+      } else if (fill !== null) {
+        status = toTitleCase(fill.fill_status);
+        tone = fill.fill_status === "filled" ? "success" : "attention";
+      } else if (order !== null) {
+        status = toTitleCase(order.status);
+        tone = order.status === "submitted" ? "attention" : "default";
+      } else if ((position?.target_weight ?? 0) > 0) {
+        status = "Ready";
+        tone = "success";
+      }
+
+      const latestAction = fill?.filled_at ?? order?.created_at ?? approval?.created_at ?? null;
+      return {
+        symbol,
+        score: position?.score ?? null,
+        targetWeight: position?.target_weight ?? null,
+        price: position?.price ?? order?.reference_price ?? fill?.fill_price ?? null,
+        marketValue: position?.market_value ?? fill?.filled_notional ?? order?.requested_notional ?? null,
+        status,
+        tone,
+        approvalStatus: approval ? toTitleCase(approval.status) : "Not needed",
+        approval,
+        latestAction: latestAction ? formatDateTime(latestAction) : "No recent activity"
+      };
+    })
+    .sort((left, right) => {
+      const leftScore = left.score ?? -999;
+      const rightScore = right.score ?? -999;
+      if (leftScore !== rightScore) {
+        return rightScore - leftScore;
+      }
+      return left.symbol.localeCompare(right.symbol);
+    });
 }
 
-function Section(props: {
+function statusSummaryRows(workspace: WorkspaceSnapshot | null): Array<{ label: string; value: string; tone: Tone }> {
+  if (!workspace) {
+    return [];
+  }
+
+  const checksByName = new Map(workspace.health.checks.map((check) => [check.name, check]));
+  return highlightedChecks.map((item) => {
+    const check = checksByName.get(item.name);
+    return {
+      label: item.label,
+      value: check?.detail ?? "Not available",
+      tone: check ? statusTone(check.ok) : "muted"
+    };
+  });
+}
+
+function Badge(props: { label: string; tone?: Tone }): JSX.Element {
+  return <span className={`badge badge--${props.tone ?? "default"}`}>{props.label}</span>;
+}
+
+function SectionCard(props: {
   title: string;
   description?: string;
-  actions?: JSX.Element;
-  children: JSX.Element | JSX.Element[] | null;
+  actions?: ReactNode;
+  children: ReactNode;
 }): JSX.Element {
   return (
-    <section className="panel">
-      <div className="panel__header">
+    <section className="card section-card">
+      <div className="section-card__header">
         <div>
-          <p className="panel__eyebrow">{props.title}</p>
-          {props.description ? <p className="panel__description">{props.description}</p> : null}
+          <p className="eyebrow">{props.title}</p>
+          {props.description ? <p className="section-card__description">{props.description}</p> : null}
         </div>
-        {props.actions ? <div className="panel__actions">{props.actions}</div> : null}
+        {props.actions ? <div className="section-card__actions">{props.actions}</div> : null}
       </div>
       {props.children}
     </section>
   );
 }
 
-function KeyValueList(props: { rows: Array<{ label: string; value: string }> }): JSX.Element {
+function StatCard(props: {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: Tone;
+}): JSX.Element {
   return (
-    <dl className="key-value-list">
-      {props.rows.map((row) => (
-        <div className="key-value-list__row" key={row.label}>
-          <dt>{row.label}</dt>
-          <dd>{row.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <article className={`stat-card stat-card--${props.tone ?? "default"}`}>
+      <p className="stat-card__label">{props.label}</p>
+      <p className="stat-card__value">{props.value}</p>
+      {props.detail ? <p className="stat-card__detail">{props.detail}</p> : null}
+    </article>
   );
 }
 
-function AuditFeed(props: { items: AuditEvent[] }): JSX.Element {
-  if (props.items.length === 0) {
-    return <p className="empty-state">No audit events recorded yet.</p>;
-  }
-
-  return (
-    <div className="timeline">
-      {props.items.map((item) => (
-        <article className="timeline__item" key={item.id}>
-          <div className="timeline__meta">
-            <StatusPill label={item.category} tone="muted" />
-            <span>{formatDateTime(item.created_at)}</span>
-          </div>
-          <p>{item.message}</p>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function OperationalLogFeed(props: { items: OperationalLogEvent[] }): JSX.Element {
-  if (props.items.length === 0) {
-    return <p className="empty-state">No operational logs recorded yet.</p>;
-  }
-
-  return (
-    <div className="timeline">
-      {props.items.map((item, index) => (
-        <article className="timeline__item" key={`${item.timestamp ?? "missing"}-${item.category}-${index}`}>
-          <div className="timeline__meta">
-            <StatusPill
-              label={item.level}
-              tone={item.level === "error" ? "alert" : item.level === "warning" ? "accent" : "muted"}
-            />
-            <StatusPill label={item.category} tone="muted" />
-            <span>{formatDateTime(item.timestamp)}</span>
-          </div>
-          <p>{item.message}</p>
-          {Object.keys(item.details).length > 0 ? (
-            <pre className="log-details">{JSON.stringify(item.details, null, 2)}</pre>
-          ) : null}
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function ChecksList(props: { checks: Array<HealthCheck | LiveGateCheck> }): JSX.Element {
-  return (
-    <div className="checks-list">
-      {props.checks.map((check) => (
-        <article className="check-row" key={check.name}>
-          <div>
-            <p className="check-row__title">{check.name}</p>
-            <p className="check-row__detail">{check.detail}</p>
-          </div>
-          <StatusPill label={check.ok ? "pass" : "blocked"} tone={statusTone(check.ok)} />
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function DataTable(props: {
+function Table(props: {
   columns: string[];
-  rows: Array<Array<JSX.Element | string>>;
+  rows: ReactNode[][];
   emptyMessage: string;
 }): JSX.Element {
   if (props.rows.length === 0) {
@@ -320,32 +499,103 @@ function DataTable(props: {
   );
 }
 
+function HealthList(props: { items: Array<{ label: string; value: string; tone: Tone }> }): JSX.Element {
+  return (
+    <div className="health-list">
+      {props.items.map((item) => (
+        <article className="health-list__item" key={item.label}>
+          <div>
+            <p className="health-list__label">{item.label}</p>
+            <p className="health-list__value">{item.value}</p>
+          </div>
+          <Badge label={item.tone === "success" ? "Ready" : item.tone === "attention" ? "Check" : "Info"} tone={item.tone} />
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ActivityFeed(props: { items: ActivityItem[] }): JSX.Element {
+  if (props.items.length === 0) {
+    return <p className="empty-state">No recent activity yet.</p>;
+  }
+
+  return (
+    <div className="activity-list">
+      {props.items.map((item) => (
+        <article className="activity-list__item" key={item.id}>
+          <div className="activity-list__copy">
+            <p className="activity-list__title">{item.title}</p>
+            <p className="activity-list__note">{item.note}</p>
+          </div>
+          <div className="activity-list__meta">
+            <Badge label={item.tone === "danger" ? "Alert" : item.tone === "attention" ? "Watch" : "Recent"} tone={item.tone} />
+            <span>{formatDateTime(item.timestamp)}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function SetupStepList(props: { items: Array<{ label: string; ok: boolean }> }): JSX.Element {
+  return (
+    <div className="setup-steps">
+      {props.items.map((item) => (
+        <article className="setup-steps__item" key={item.label}>
+          <div className={`setup-steps__dot ${item.ok ? "setup-steps__dot--ready" : ""}`} />
+          <p>{item.label}</p>
+          <Badge label={item.ok ? "Done" : "Next"} tone={item.ok ? "success" : "attention"} />
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function App(): JSX.Element {
   const [activeScreen, setActiveScreen] = useState<ScreenKey>(readHashScreen);
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeAction, setActiveAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [setupDraft, setSetupDraft] = useState<SetupDraft>(() => initialSetupDraft(null));
   const [setupDirty, setSetupDirty] = useState(false);
-  const [backfillSymbols, setBackfillSymbols] = useState("AAPL, MSFT, SPY");
-  const [backfillAsOf, setBackfillAsOf] = useState("");
-  const [backfillLookbackDays, setBackfillLookbackDays] = useState("180");
-  const [researchAsOf, setResearchAsOf] = useState("");
-  const [researchModelVersion, setResearchModelVersion] = useState("");
   const [ackDisableApprovals, setAckDisableApprovals] = useState(false);
 
   const config = (workspace?.config ?? null) as Record<string, any> | null;
-  const modeState = workspace?.risk.mode_state ?? null;
+  const stockRows = buildStockRows(workspace);
+  const activityItems = buildActivityFeed(workspace);
+  const readinessRows = statusSummaryRows(workspace);
   const pendingApprovals =
-    workspace?.live.latest_approvals.filter((item) => item.status === "pending") ?? [];
-  const latestTarget = workspace?.portfolio.latest_target_snapshot;
-  const topSignals = [...(latestTarget?.positions ?? [])]
-    .sort((left, right) => (right.score ?? -999) - (left.score ?? -999))
-    .slice(0, 6);
+    workspace?.live.latest_approvals.filter((approval) => approval.status === "pending") ?? [];
+  const backtestSummary = (workspace?.models.latest_backtest_run?.summary ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const latestRunProfit =
+    workspace?.portfolio.status.latest_run !== null && workspace?.portfolio.status.latest_run !== undefined
+      ? (workspace.portfolio.status.latest_run.end_nav ?? 0) -
+        (workspace.portfolio.status.latest_run.start_nav ?? 0)
+      : null;
+  const backtestReturn =
+    summaryNumber(backtestSummary, "total_return") ??
+    workspace?.models.latest_model?.metrics["total_return"] ??
+    null;
+  const benchmarkReturn =
+    summaryNumber(backtestSummary, "benchmark_return") ??
+    workspace?.models.latest_model?.benchmark_metrics["benchmark_return"] ??
+    null;
+  const backtestExcess =
+    summaryNumber(backtestSummary, "excess_return") ??
+    (backtestReturn !== null && benchmarkReturn !== null ? backtestReturn - benchmarkReturn : null);
+  const latestNav = workspace?.portfolio.latest_target_snapshot?.nav ?? null;
+  const latestCash = workspace?.portfolio.latest_target_snapshot?.cash_balance ?? null;
+  const trackedSymbols = stockRows.length;
+  const highlightedStocks = stockRows.slice(0, 6);
 
   async function loadWorkspace(background = false): Promise<void> {
     if (background) {
@@ -358,6 +608,7 @@ function App(): JSX.Element {
     try {
       const snapshot = await fetchWorkspace();
       setWorkspace(snapshot);
+      setLastUpdated(new Date().toISOString());
       setLoadError(null);
     } catch (error) {
       setLoadError(messageFromError(error));
@@ -386,20 +637,7 @@ function App(): JSX.Element {
       return;
     }
     setSetupDraft(initialSetupDraft(workspace.config as Record<string, any>));
-    const universe = (workspace.config.universe ?? {}) as Record<string, any>;
-    const suggestedSymbols = [
-      ...((universe.stock_candidates ?? []) as string[]),
-      ...((universe.curated_etfs ?? []) as string[])
-    ]
-      .slice(0, 8)
-      .join(", ");
-    if (suggestedSymbols) {
-      setBackfillSymbols(suggestedSymbols);
-    }
-    if (!researchModelVersion && workspace.models.latest_model?.version) {
-      setResearchModelVersion(workspace.models.latest_model.version);
-    }
-  }, [workspace, setupDirty, researchModelVersion]);
+  }, [workspace, setupDirty]);
 
   function selectScreen(screen: ScreenKey): void {
     setActiveScreen(screen);
@@ -470,7 +708,7 @@ function App(): JSX.Element {
       }
     };
 
-    await runAction("save-setup", () => updateConfig(patch), "Configuration saved.");
+    await runAction("save-setup", () => updateConfig(patch), "Setup saved.");
     setSetupDirty(false);
   }
 
@@ -500,622 +738,551 @@ function App(): JSX.Element {
 
   const setupSteps = [
     {
-      label: "Storage paths configured",
+      label: "Choose where the app stores its local files",
       ok: workspace?.setup.initialized ?? false
     },
     {
-      label: "Primary data provider ready",
+      label: "Connect a market data source",
       ok: workspace?.health.checks.some((check) => check.name === "primary-provider" && check.ok) ?? false
     },
     {
-      label: "Secondary data corroboration configured",
-      ok: Boolean((config?.data_providers?.secondary_provider as string | null | undefined) ?? null)
-    },
-    {
-      label: "SEC fundamentals configured",
+      label: "Enable fundamentals when the SEC user agent is ready",
       ok: workspace?.health.checks.some((check) => check.name === "fundamentals-provider" && check.ok) ?? false
     },
     {
-      label: "Broker details saved",
+      label: "Save broker accounts if you plan to use paper or live trading",
       ok: Boolean(config?.broker?.paper_account_id) && Boolean(config?.broker?.live_account_id)
     },
     {
-      label: "Readiness checks passing",
+      label: "Run readiness checks until the system is green",
       ok: workspace?.health.status === "ok"
     },
     {
-      label: "Landed in simulation mode",
-      ok: modeState?.current_mode === "simulation"
+      label: "Stay in simulation mode until paper trading is ready",
+      ok: workspace?.risk.mode_state?.current_mode === "simulation"
     }
   ];
 
-  const latestJobs = [
-    {
-      label: "Backfill",
-      status: workspace?.market_data.latest_run?.status ?? "not run",
-      detail: workspace?.market_data.latest_run?.completed_at
-        ? formatDateTime(workspace.market_data.latest_run.completed_at)
-        : "No completed backfill yet."
-    },
-    {
-      label: "Dataset",
-      status: workspace?.datasets.latest_dataset_snapshot ? "ready" : "missing",
-      detail: workspace?.datasets.latest_dataset_snapshot?.created_at
-        ? formatDateTime(workspace.datasets.latest_dataset_snapshot.created_at)
-        : "No dataset snapshot yet."
-    },
-    {
-      label: "Training",
-      status: workspace?.models.latest_training_run?.status ?? "not run",
-      detail: workspace?.models.latest_training_run?.completed_at
-        ? formatDateTime(workspace.models.latest_training_run.completed_at)
-        : "No training run yet."
-    },
-    {
-      label: "Backtest",
-      status: workspace?.models.latest_backtest_run?.status ?? "not run",
-      detail: workspace?.models.latest_backtest_run?.completed_at
-        ? formatDateTime(workspace.models.latest_backtest_run.completed_at)
-        : "No backtest run yet."
-    },
-    {
-      label: "Simulation",
-      status: workspace?.portfolio.status.latest_run?.status ?? "not run",
-      detail: workspace?.portfolio.status.latest_run?.completed_at
-        ? formatDateTime(workspace.portfolio.status.latest_run.completed_at)
-        : "No simulation run yet."
-    }
+  const modeButtons = [
+    { key: "simulation", label: "Simulation" },
+    { key: "paper", label: "Paper" },
+    { key: "live-manual", label: "Live Manual" },
+    { key: "live-autonomous", label: "Live Auto" }
   ];
 
   if (loading && workspace === null) {
     return (
-      <main className="app-shell">
-        <section className="hero-panel">
-          <p className="hero-panel__eyebrow">Phase 8</p>
-          <h1>StockTradeBot Operator Console</h1>
-          <p>Loading the local control surface.</p>
+      <main className="shell">
+        <section className="hero card">
+          <div className="hero__copy">
+            <p className="eyebrow">StockTradeBot</p>
+            <h1>Loading your workspace</h1>
+            <p className="hero__description">Checking the local runtime, database, and latest market state.</p>
+          </div>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="app-shell">
-      <header className="hero-panel">
+    <main className="shell">
+      <header className="topbar">
         <div>
-          <p className="hero-panel__eyebrow">Phase 8</p>
-          <h1>StockTradeBot Operator Console</h1>
-          <p className="hero-panel__copy">
-            Install, configure, monitor, and control the local trading stack from one browser
-            surface. Every control path remains explicit and audit-friendly.
-          </p>
+          <p className="eyebrow">StockTradeBot</p>
+          <h1>{headlineForWorkspace(workspace)}</h1>
+          <p className="topbar__copy">{copyForWorkspace(workspace)}</p>
         </div>
-        <div className="hero-panel__status">
-          <StatusPill label={workspace?.health.status ?? "offline"} tone={workspace?.health.status === "ok" ? "neutral" : "alert"} />
-          <StatusPill label={modeState?.current_mode ?? "simulation"} tone={modeTone(modeState?.current_mode)} />
-          <StatusPill label={modeState?.live_profile ?? "manual"} tone="muted" />
-          {refreshing ? <span className="hero-panel__refresh">Refreshing…</span> : null}
+        <div className="topbar__meta">
+          <Badge label={healthLabel(workspace)} tone={healthTone(workspace)} />
+          <Badge label={currentModeLabel(workspace)} tone={modeTone(workspace?.risk.mode_state?.current_mode)} />
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={refreshing}
+            onClick={() => void loadWorkspace(true)}
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+          <p className="topbar__timestamp">
+            Last updated {lastUpdated ? formatDateTime(lastUpdated) : "n/a"}
+          </p>
         </div>
       </header>
 
-      {loadError ? <p className="banner banner--error">{loadError}</p> : null}
-      {actionError ? <p className="banner banner--error">{actionError}</p> : null}
+      {loadError ? <p className="banner banner--danger">{loadError}</p> : null}
+      {actionError ? <p className="banner banner--danger">{actionError}</p> : null}
       {actionMessage ? <p className="banner banner--success">{actionMessage}</p> : null}
 
-      <div className="layout">
-        <aside className="sidebar">
-          <nav className="nav">
-            {screens.map((screen) => (
+      <nav className="tabs" aria-label="Main views">
+        {screens.map((screen) => (
+          <button
+            type="button"
+            key={screen.key}
+            className={screen.key === activeScreen ? "tabs__item tabs__item--active" : "tabs__item"}
+            onClick={() => selectScreen(screen.key)}
+          >
+            {screen.label}
+            {screen.key === "stocks" && pendingApprovals.length > 0 ? (
+              <span className="tabs__count">{pendingApprovals.length}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
+
+      {activeScreen === "overview" ? (
+        <div className="screen-grid">
+          <section className="hero card">
+            <div className="hero__copy">
+              <p className="eyebrow">Current state</p>
+              <h2>{headlineForWorkspace(workspace)}</h2>
+              <p className="hero__description">{copyForWorkspace(workspace)}</p>
+              <div className="hero__badges">
+                <Badge label={workspace?.risk.active_freeze ? "Freeze active" : "No freeze"} tone={workspace?.risk.active_freeze ? "danger" : "success"} />
+                <Badge label={`${pendingApprovals.length} pending approval${pendingApprovals.length === 1 ? "" : "s"}`} tone={pendingApprovals.length > 0 ? "attention" : "muted"} />
+                <Badge label={`${trackedSymbols} tracked stocks`} tone="muted" />
+              </div>
+            </div>
+            <div className="hero__stats">
+              <StatCard
+                label="Backtest profit"
+                value={formatPercent(backtestReturn)}
+                detail={
+                  benchmarkReturn !== null
+                    ? `Benchmark ${formatPercent(benchmarkReturn)}`
+                    : "Run a backtest to compare against SPY."
+                }
+                tone={valueTone(backtestReturn)}
+              />
+              <StatCard
+                label="Profit after latest run"
+                value={formatCurrency(latestRunProfit)}
+                detail={
+                  workspace?.portfolio.status.latest_run?.completed_at
+                    ? formatDateTime(workspace.portfolio.status.latest_run.completed_at)
+                    : "No completed run yet."
+                }
+                tone={valueTone(latestRunProfit)}
+              />
+              <StatCard
+                label="Portfolio value"
+                value={formatCurrency(latestNav)}
+                detail={latestCash !== null ? `Cash ${formatCurrency(latestCash)}` : "No portfolio snapshot yet."}
+                tone="default"
+              />
+            </div>
+          </section>
+
+          <SectionCard
+            title="Change mode"
+            description="Switch the system mode without leaving the main screen."
+            actions={
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={ackDisableApprovals}
+                  onChange={(event) => setAckDisableApprovals(event.target.checked)}
+                />
+                <span>I understand live auto skips order approvals</span>
+              </label>
+            }
+          >
+            <div className="button-row">
+              {modeButtons.map((item) => (
+                <button
+                  type="button"
+                  key={item.key}
+                  className={
+                    item.key === "live-autonomous"
+                      ? "button button--danger"
+                      : "button button--secondary"
+                  }
+                  disabled={activeAction === `mode-${item.key}`}
+                  onClick={() =>
+                    void runAction(
+                      `mode-${item.key}`,
+                      () => updateMode(item.key, ackDisableApprovals),
+                      `${item.label} selected.`,
+                    )
+                  }
+                >
+                  {activeAction === `mode-${item.key}` ? "Updating..." : item.label}
+                </button>
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Quick actions" description="Run the main tasks without exposing raw backend details.">
+            <div className="button-grid">
               <button
                 type="button"
-                key={screen.key}
-                className={screen.key === activeScreen ? "nav__item nav__item--active" : "nav__item"}
-                onClick={() => selectScreen(screen.key)}
+                className="button"
+                disabled={activeAction === "backfill"}
+                onClick={() =>
+                  void runAction(
+                    "backfill",
+                    () =>
+                      backfillMarketData({
+                        lookbackDays: 180,
+                        symbols: configuredUniverse(config)
+                      }),
+                    "Market data refreshed.",
+                  )
+                }
               >
-                <span>{screen.label}</span>
-                {screen.key === "orders" && pendingApprovals.length > 0 ? (
-                  <StatusPill label={String(pendingApprovals.length)} tone="alert" />
-                ) : null}
+                {activeAction === "backfill" ? "Refreshing data..." : "Refresh data"}
               </button>
-            ))}
-          </nav>
-          <div className="sidebar__meta">
-            <p>UI URL</p>
-            <code>{workspace?.health.ui_url ?? "n/a"}</code>
-            <p>Config</p>
-            <code>{workspace?.setup.config_path ?? "n/a"}</code>
-          </div>
-        </aside>
-
-        <section className="content">
-          {activeScreen === "setup" ? (
-            <>
-              <Section
-                title="Setup Flow"
-                description="The setup flow stays honest about readiness. Saving configuration updates the local typed config and refreshes the doctor checks."
-                actions={
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={activeAction === "save-setup"}
-                    onClick={() => void saveSetup()}
-                  >
-                    {activeAction === "save-setup" ? "Saving…" : "Save Setup"}
-                  </button>
+              <button
+                type="button"
+                className="button"
+                disabled={activeAction === "train-model"}
+                onClick={() => void runAction("train-model", () => trainModel(), "Model training completed.")}
+              >
+                {activeAction === "train-model" ? "Training..." : "Train model"}
+              </button>
+              <button
+                type="button"
+                className="button"
+                disabled={activeAction === "backtest-model"}
+                onClick={() => void runAction("backtest-model", () => backtestModel(), "Backtest completed.")}
+              >
+                {activeAction === "backtest-model" ? "Running backtest..." : "Run backtest"}
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={activeAction === "simulate-run"}
+                onClick={() =>
+                  void runAction("simulate-run", () => runSimulation({}), "Simulation completed.")
                 }
               >
-                <div className="grid grid--two">
-                  <div className="form-stack">
-                    <label>
-                      <span>Timezone</span>
-                      <input value={setupDraft.timezone} onChange={(event) => updateDraft("timezone", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Database path</span>
-                      <input value={setupDraft.databasePath} onChange={(event) => updateDraft("databasePath", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Artifacts directory</span>
-                      <input value={setupDraft.artifactsDir} onChange={(event) => updateDraft("artifactsDir", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Logs directory</span>
-                      <input value={setupDraft.logsDir} onChange={(event) => updateDraft("logsDir", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Primary provider</span>
-                      <select value={setupDraft.primaryProvider} onChange={(event) => updateDraft("primaryProvider", event.target.value)}>
-                        <option value="stooq">stooq</option>
-                        <option value="alpha_vantage">alpha_vantage</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Secondary provider</span>
-                      <select value={setupDraft.secondaryProvider} onChange={(event) => updateDraft("secondaryProvider", event.target.value)}>
-                        <option value="">none</option>
-                        <option value="alpha_vantage">alpha_vantage</option>
-                        <option value="stooq">stooq</option>
-                      </select>
-                    </label>
-                    <label className="checkbox">
-                      <input type="checkbox" checked={setupDraft.alphaEnabled} onChange={(event) => updateDraft("alphaEnabled", event.target.checked)} />
-                      <span>Enable Alpha Vantage corroboration</span>
-                    </label>
-                    <label className="checkbox">
-                      <input type="checkbox" checked={setupDraft.fundamentalsEnabled} onChange={(event) => updateDraft("fundamentalsEnabled", event.target.checked)} />
-                      <span>Enable SEC fundamentals</span>
-                    </label>
-                    <label>
-                      <span>SEC user agent</span>
-                      <input value={setupDraft.fundamentalsUserAgent} onChange={(event) => updateDraft("fundamentalsUserAgent", event.target.value)} />
-                    </label>
-                  </div>
-                  <div className="form-stack">
-                    <label>
-                      <span>Stock candidates</span>
-                      <textarea value={setupDraft.stockCandidates} onChange={(event) => updateDraft("stockCandidates", event.target.value)} rows={4} />
-                    </label>
-                    <label>
-                      <span>Curated ETFs</span>
-                      <textarea value={setupDraft.curatedEtfs} onChange={(event) => updateDraft("curatedEtfs", event.target.value)} rows={3} />
-                    </label>
-                    <label className="checkbox">
-                      <input type="checkbox" checked={setupDraft.brokerEnabled} onChange={(event) => updateDraft("brokerEnabled", event.target.checked)} />
-                      <span>Enable broker integration</span>
-                    </label>
-                    <label>
-                      <span>Operator name</span>
-                      <input value={setupDraft.operatorName} onChange={(event) => updateDraft("operatorName", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Paper account id</span>
-                      <input value={setupDraft.paperAccountId} onChange={(event) => updateDraft("paperAccountId", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Live account id</span>
-                      <input value={setupDraft.liveAccountId} onChange={(event) => updateDraft("liveAccountId", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Gateway base URL</span>
-                      <input value={setupDraft.gatewayBaseUrl} onChange={(event) => updateDraft("gatewayBaseUrl", event.target.value)} />
-                    </label>
-                    <label>
-                      <span>Default mode</span>
-                      <select value={setupDraft.defaultMode} onChange={(event) => updateDraft("defaultMode", event.target.value)}>
-                        <option value="simulation">simulation</option>
-                        <option value="paper">paper</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Live profile</span>
-                      <select value={setupDraft.liveProfile} onChange={(event) => updateDraft("liveProfile", event.target.value)}>
-                        <option value="manual">manual</option>
-                        <option value="autonomous">autonomous</option>
-                      </select>
-                    </label>
-                    <div className="grid grid--two">
-                      <label>
-                        <span>Daily loss cap</span>
-                        <input value={setupDraft.dailyLossCap} onChange={(event) => updateDraft("dailyLossCap", event.target.value)} />
-                      </label>
-                      <label>
-                        <span>Drawdown freeze</span>
-                        <input value={setupDraft.drawdownFreeze} onChange={(event) => updateDraft("drawdownFreeze", event.target.value)} />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </Section>
-
-              <Section title="Readiness Checklist" description="The system lands in simulation first and only advances when the contract gates are actually met.">
-                <div className="checks-list">
-                  {setupSteps.map((step) => (
-                    <article className="check-row" key={step.label}>
-                      <div>
-                        <p className="check-row__title">{step.label}</p>
-                      </div>
-                      <StatusPill label={step.ok ? "ready" : "pending"} tone={statusTone(step.ok)} />
-                    </article>
-                  ))}
-                </div>
-              </Section>
-            </>
-          ) : null}
-
-          {activeScreen === "dashboard" ? (
-            <>
-              <Section title="Current State" description="Critical status stays visible at the top of the local dashboard.">
-                <div className="metrics-grid">
-                  <MetricCard label="Mode" value={modeState?.current_mode ?? "simulation"} tone={modeTone(modeState?.current_mode)} detail={modeState?.requested_mode ? `Requested: ${modeState.requested_mode}` : "No pending mode request."} />
-                  <MetricCard label="Freeze" value={workspace?.risk.active_freeze ? "active" : "clear"} tone={workspace?.risk.active_freeze ? "alert" : "neutral"} detail={workspace?.risk.active_freeze?.reason ?? "No active freeze."} />
-                  <MetricCard label="Broker" value={workspace?.broker.paper.broker.connectivity?.ok ? "connected" : "not ready"} tone={workspace?.broker.paper.broker.connectivity?.ok ? "neutral" : "alert"} detail={workspace?.broker.paper.broker.message ?? "No broker snapshot."} />
-                  <MetricCard label="Pending approvals" value={String(pendingApprovals.length)} tone={pendingApprovals.length > 0 ? "alert" : "neutral"} detail={pendingApprovals.length > 0 ? "Manual review required." : "No pending manual approvals."} />
-                  <MetricCard label="Portfolio NAV" value={formatCurrency(workspace?.portfolio.latest_target_snapshot?.nav)} detail={`Cash ${formatCurrency(workspace?.portfolio.latest_target_snapshot?.cash_balance)}`} />
-                  <MetricCard label="Day PnL" value={workspace?.portfolio.status.latest_run ? formatCurrency((workspace.portfolio.status.latest_run.end_nav ?? 0) - (workspace.portfolio.status.latest_run.start_nav ?? 0)) : "n/a"} tone={(workspace?.portfolio.status.latest_run?.end_nav ?? 0) >= (workspace?.portfolio.status.latest_run?.start_nav ?? 0) ? "neutral" : "alert"} detail={workspace?.portfolio.status.latest_run?.regime ?? "No latest run."} />
-                  <MetricCard label="Active model" value={workspace?.models.latest_model?.version ?? "none"} detail={workspace?.models.latest_model?.promotion_status ?? "research-only"} />
-                  <MetricCard label="Dataset" value={workspace?.datasets.latest_dataset_snapshot?.feature_set_version ?? "missing"} detail={workspace?.datasets.latest_dataset_snapshot ? `${workspace.datasets.latest_dataset_snapshot.row_count} rows` : "Build a dataset snapshot first."} />
-                </div>
-              </Section>
-
-              <Section title="Latest Jobs">
-                <div className="checks-list">
-                  {latestJobs.map((job) => (
-                    <article className="check-row" key={job.label}>
-                      <div>
-                        <p className="check-row__title">{job.label}</p>
-                        <p className="check-row__detail">{job.detail}</p>
-                      </div>
-                      <StatusPill label={job.status} tone={job.status === "completed" || job.status === "ready" ? "neutral" : "muted"} />
-                    </article>
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Top Signals" description="The signal view is pulled from the latest target portfolio snapshot.">
-                <DataTable
-                  columns={["Symbol", "Score", "Target", "Sector", "Price", "Market value"]}
-                  rows={topSignals.map((position) => [
-                    position.symbol,
-                    formatNumber(position.score, 4),
-                    formatPercent(position.target_weight),
-                    position.sector ?? "n/a",
-                    formatCurrency(position.price),
-                    formatCurrency(position.market_value)
-                  ])}
-                  emptyMessage="No target portfolio exists yet."
-                />
-              </Section>
-            </>
-          ) : null}
-
-          {activeScreen === "portfolio" ? (
-            <>
-              <Section title="Target Portfolio" description="The optimizer output is shown alongside exposure and turnover.">
-                <KeyValueList
-                  rows={[
-                    { label: "Trade date", value: latestTarget?.trade_date ?? "n/a" },
-                    { label: "NAV", value: formatCurrency(latestTarget?.nav) },
-                    { label: "Cash", value: formatCurrency(latestTarget?.cash_balance) },
-                    { label: "Gross exposure", value: formatPercent(latestTarget?.gross_exposure) },
-                    { label: "Net exposure", value: formatPercent(latestTarget?.net_exposure) },
-                    { label: "Turnover", value: formatPercent(latestTarget?.turnover_ratio) }
-                  ]}
-                />
-                <DataTable
-                  columns={["Symbol", "Target", "Actual", "Shares", "Score", "Sector"]}
-                  rows={(latestTarget?.positions ?? []).map((position: PortfolioPosition) => [
-                    position.symbol,
-                    formatPercent(position.target_weight),
-                    formatPercent(position.actual_weight),
-                    formatNumber(position.shares, 2),
-                    formatNumber(position.score, 4),
-                    position.sector ?? "n/a"
-                  ])}
-                  emptyMessage="No target positions are available."
-                />
-              </Section>
-
-              <Section title="Broker Snapshot" description="Paper and live holdings are kept separate from model targets.">
-                <KeyValueList
-                  rows={[
-                    { label: "Paper account", value: workspace?.broker.paper.broker.paper_account_id ?? "n/a" },
-                    { label: "Live account", value: workspace?.broker.live.broker.live_account_id ?? "n/a" },
-                    { label: "Broker connectivity", value: workspace?.broker.paper.broker.connectivity?.detail ?? "not configured" },
-                    { label: "Paper safe days", value: String(workspace?.paper.paper_safe_days ?? 0) },
-                    { label: "Combined safe days", value: String(workspace?.live.safe_day_counts.paper_and_live ?? 0) }
-                  ]}
-                />
-              </Section>
-            </>
-          ) : null}
-
-          {activeScreen === "orders" ? (
-            <>
-              <Section
-                title="Execution Controls"
-                description="Run paper trading, prepare live-manual approvals, or execute live-autonomous when the gates are satisfied."
-                actions={
-                  <div className="toolbar">
-                    <button type="button" className="button" disabled={activeAction === "paper-run"} onClick={() => void runAction("paper-run", () => runPaper({ asOf: researchAsOf || undefined, modelVersion: researchModelVersion || undefined }), "Paper trading run completed.")}>
-                      {activeAction === "paper-run" ? "Running…" : "Run Paper"}
-                    </button>
-                    <button type="button" className="button" disabled={activeAction === "live-prepare"} onClick={() => void runAction("live-prepare", () => runLive({ asOf: researchAsOf || undefined, modelVersion: researchModelVersion || undefined, ackDisableApprovals }), "Live workflow submitted.")}>
-                      {activeAction === "live-prepare" ? "Submitting…" : "Prepare Live"}
-                    </button>
-                    <label className="checkbox checkbox--inline">
-                      <input type="checkbox" checked={ackDisableApprovals} onChange={(event) => setAckDisableApprovals(event.target.checked)} />
-                      <span>Acknowledge autonomous approval bypass</span>
-                    </label>
-                  </div>
+                {activeAction === "simulate-run" ? "Running simulation..." : "Run simulation"}
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={activeAction === "paper-run"}
+                onClick={() => void runAction("paper-run", () => runPaper({}), "Paper trading completed.")}
+              >
+                {activeAction === "paper-run" ? "Running paper..." : "Run paper"}
+              </button>
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={activeAction === "live-run"}
+                onClick={() =>
+                  void runAction(
+                    "live-run",
+                    () => runLive({ ackDisableApprovals }),
+                    "Live workflow submitted.",
+                  )
                 }
               >
-                <div className="grid grid--two">
-                  <label>
-                    <span>As-of date</span>
-                    <input value={researchAsOf} onChange={(event) => setResearchAsOf(event.target.value)} placeholder="2026-04-15" />
-                  </label>
-                  <label>
-                    <span>Model version</span>
-                    <input value={researchModelVersion} onChange={(event) => setResearchModelVersion(event.target.value)} placeholder="latest model" />
-                  </label>
-                </div>
-              </Section>
+                {activeAction === "live-run" ? "Preparing live..." : "Prepare live"}
+              </button>
+            </div>
+          </SectionCard>
 
-              <Section
-                title="Manual Approvals"
-                description="Every pending live-manual order shows its own approval state. Autonomous mode is not presented as easier."
-                actions={
-                  pendingApprovals.length > 0 ? (
-                    <button type="button" className="button button--danger" disabled={activeAction === "approve-all"} onClick={() => void runAction("approve-all", () => approveLive({ runId: workspace?.live.latest_run?.id, approveAll: true }), "All pending approvals processed.")}>
-                      {activeAction === "approve-all" ? "Processing…" : "Approve All"}
+          <SectionCard title="System readiness" description="A short checklist of the essentials.">
+            <HealthList items={readinessRows} />
+          </SectionCard>
+
+          <SectionCard title="Stocks that need attention" description="The highest-priority symbols from the current target portfolio and order queue.">
+            <Table
+              columns={["Stock", "Score", "Target", "Price", "Status", "Approval"]}
+              rows={highlightedStocks.map((row) => [
+                <strong key={`${row.symbol}-symbol`}>{row.symbol}</strong>,
+                formatNumber(row.score, 3),
+                formatPercent(row.targetWeight),
+                formatCurrency(row.price, 2),
+                <Badge key={`${row.symbol}-status`} label={row.status} tone={row.tone} />,
+                row.approvalStatus
+              ])}
+              emptyMessage="No stocks are ready yet."
+            />
+          </SectionCard>
+
+          <SectionCard title="Recent activity" description="Latest events from the system and audit trail.">
+            <ActivityFeed items={activityItems} />
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeScreen === "stocks" ? (
+        <div className="screen-grid">
+          <SectionCard title="Stock status" description="Each stock is shown with its latest signal, target, and order state.">
+            <Table
+              columns={["Stock", "Score", "Target", "Price", "Value", "Current status", "Last update", "Actions"]}
+              rows={stockRows.map((row) => [
+                <strong key={`${row.symbol}-stock`}>{row.symbol}</strong>,
+                formatNumber(row.score, 3),
+                formatPercent(row.targetWeight),
+                formatCurrency(row.price, 2),
+                formatCurrency(row.marketValue),
+                <Badge key={`${row.symbol}-badge`} label={row.status} tone={row.tone} />,
+                row.latestAction,
+                row.approval?.status === "pending" ? (
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="button button--small"
+                      disabled={activeAction === `approve-${row.symbol}`}
+                      onClick={() => void approveSingle(row.symbol)}
+                    >
+                      Approve
                     </button>
-                  ) : undefined
-                }
+                    <button
+                      type="button"
+                      className="button button--small button--secondary"
+                      disabled={activeAction === `reject-${row.symbol}`}
+                      onClick={() => void rejectSingle(row.symbol)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : (
+                  "No action needed"
+                )
+              ])}
+              emptyMessage="No stock activity has been recorded yet."
+            />
+          </SectionCard>
+
+          <SectionCard title="Portfolio snapshot" description="A simple summary of the current target portfolio.">
+            <div className="stats-grid">
+              <StatCard
+                label="Holdings"
+                value={String(workspace?.portfolio.latest_target_snapshot?.holding_count ?? 0)}
+                detail={workspace?.portfolio.latest_target_snapshot?.trade_date ?? "No trade date yet."}
+              />
+              <StatCard
+                label="Gross exposure"
+                value={formatPercent(workspace?.portfolio.latest_target_snapshot?.gross_exposure)}
+                detail={`Net ${formatPercent(workspace?.portfolio.latest_target_snapshot?.net_exposure)}`}
+              />
+              <StatCard
+                label="Turnover"
+                value={formatPercent(workspace?.portfolio.latest_target_snapshot?.turnover_ratio)}
+                detail="Latest target portfolio snapshot"
+              />
+            </div>
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeScreen === "activity" ? (
+        <div className="screen-grid">
+          <SectionCard title="Performance" description="Backtest results and the latest trading run at a glance.">
+            <div className="stats-grid">
+              <StatCard
+                label="Backtest return"
+                value={formatPercent(backtestReturn)}
+                detail={workspace?.models.latest_backtest_run?.completed_at ? formatDateTime(workspace.models.latest_backtest_run.completed_at) : "No backtest completed yet."}
+                tone={valueTone(backtestReturn)}
+              />
+              <StatCard
+                label="Excess vs benchmark"
+                value={formatPercent(backtestExcess)}
+                detail={benchmarkReturn !== null ? `Benchmark ${formatPercent(benchmarkReturn)}` : "Benchmark not available yet."}
+                tone={valueTone(backtestExcess)}
+              />
+              <StatCard
+                label="Latest run profit"
+                value={formatCurrency(latestRunProfit)}
+                detail={workspace?.portfolio.status.latest_run?.mode ? toTitleCase(workspace.portfolio.status.latest_run.mode) : "No recent run."}
+                tone={valueTone(latestRunProfit)}
+              />
+              <StatCard
+                label="Safe days"
+                value={String(workspace?.live.safe_day_counts.paper_and_live ?? 0)}
+                detail={`Paper only ${workspace?.paper.paper_safe_days ?? 0}`}
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Recent orders" description="Latest order intents and fills.">
+            <Table
+              columns={["Stock", "Action", "Status", "Shares", "Price", "When"]}
+              rows={(workspace?.portfolio.latest_orders ?? []).map((order) => [
+                <strong key={`${order.id}-stock`}>{order.symbol}</strong>,
+                toTitleCase(order.side),
+                toTitleCase(order.status),
+                formatNumber(order.requested_shares, 2),
+                formatCurrency(order.limit_price ?? order.reference_price, 2),
+                formatDateTime(order.created_at)
+              ])}
+              emptyMessage="No recent orders are recorded."
+            />
+            <Table
+              columns={["Stock", "Fill status", "Filled shares", "Price", "Slippage", "When"]}
+              rows={(workspace?.portfolio.latest_fills ?? []).map((fill) => [
+                <strong key={`${fill.id}-fill`}>{fill.symbol}</strong>,
+                toTitleCase(fill.fill_status),
+                formatNumber(fill.filled_shares, 2),
+                formatCurrency(fill.fill_price, 2),
+                `${fill.slippage_bps.toFixed(1)} bps`,
+                formatDateTime(fill.filled_at)
+              ])}
+              emptyMessage="No fills are recorded yet."
+            />
+          </SectionCard>
+
+          <SectionCard title="Recent activity" description="A clean log of what changed most recently.">
+            <ActivityFeed items={activityItems} />
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeScreen === "setup" ? (
+        <div className="screen-grid">
+          <SectionCard
+            title="First-run checklist"
+            description="Use this order if you are setting up the app for the first time."
+            actions={
+              <button
+                type="button"
+                className="button"
+                disabled={activeAction === "save-setup"}
+                onClick={() => void saveSetup()}
               >
-                <DataTable
-                  columns={["Symbol", "Status", "Requested", "Decision", "Actions"]}
-                  rows={pendingApprovals.map((approval: ApprovalSnapshot) => [
-                    approval.symbol,
-                    approval.status,
-                    formatDateTime(approval.created_at),
-                    approval.reason ?? "pending",
-                    (
-                      <div className="row-actions">
-                        <button type="button" className="button button--small" disabled={activeAction === `approve-${approval.symbol}`} onClick={() => void approveSingle(approval.symbol)}>
-                          Approve
-                        </button>
-                        <button type="button" className="button button--small button--ghost" disabled={activeAction === `reject-${approval.symbol}`} onClick={() => void rejectSingle(approval.symbol)}>
-                          Reject
-                        </button>
-                      </div>
-                    )
-                  ])}
-                  emptyMessage="No pending approvals."
+                {activeAction === "save-setup" ? "Saving..." : "Save setup"}
+              </button>
+            }
+          >
+            <SetupStepList items={setupSteps} />
+          </SectionCard>
+
+          <SectionCard title="Storage" description="These paths tell the app where to keep its local database, reports, and logs.">
+            <div className="form-grid">
+              <label>
+                <span>Timezone</span>
+                <input value={setupDraft.timezone} onChange={(event) => updateDraft("timezone", event.target.value)} />
+              </label>
+              <label>
+                <span>Database path</span>
+                <input value={setupDraft.databasePath} onChange={(event) => updateDraft("databasePath", event.target.value)} />
+              </label>
+              <label>
+                <span>Artifacts directory</span>
+                <input value={setupDraft.artifactsDir} onChange={(event) => updateDraft("artifactsDir", event.target.value)} />
+              </label>
+              <label>
+                <span>Logs directory</span>
+                <input value={setupDraft.logsDir} onChange={(event) => updateDraft("logsDir", event.target.value)} />
+              </label>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Market data" description="Pick providers and the list of stocks and ETFs you want the app to follow.">
+            <div className="form-grid">
+              <label>
+                <span>Primary provider</span>
+                <select value={setupDraft.primaryProvider} onChange={(event) => updateDraft("primaryProvider", event.target.value)}>
+                  <option value="stooq">stooq</option>
+                  <option value="alpha_vantage">alpha_vantage</option>
+                </select>
+              </label>
+              <label>
+                <span>Secondary provider</span>
+                <select value={setupDraft.secondaryProvider} onChange={(event) => updateDraft("secondaryProvider", event.target.value)}>
+                  <option value="">none</option>
+                  <option value="alpha_vantage">alpha_vantage</option>
+                  <option value="stooq">stooq</option>
+                </select>
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={setupDraft.alphaEnabled}
+                  onChange={(event) => updateDraft("alphaEnabled", event.target.checked)}
                 />
-              </Section>
-
-              <Section title="Recent Orders and Fills">
-                <DataTable
-                  columns={["Symbol", "Side", "Status", "Type", "Shares", "Target"]}
-                  rows={(workspace?.portfolio.latest_orders ?? []).map((order: OrderSnapshot) => [
-                    order.symbol,
-                    order.side,
-                    order.status,
-                    order.order_type,
-                    formatNumber(order.requested_shares, 2),
-                    formatPercent(order.target_weight)
-                  ])}
-                  emptyMessage="No recent orders are recorded."
+                <span>Use Alpha Vantage as supporting confirmation data</span>
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={setupDraft.fundamentalsEnabled}
+                  onChange={(event) => updateDraft("fundamentalsEnabled", event.target.checked)}
                 />
-                <DataTable
-                  columns={["Symbol", "Side", "Fill status", "Filled shares", "Price", "Slippage"]}
-                  rows={(workspace?.portfolio.latest_fills ?? []).map((fill: FillSnapshot) => [
-                    fill.symbol,
-                    fill.side,
-                    fill.fill_status,
-                    formatNumber(fill.filled_shares, 2),
-                    formatCurrency(fill.fill_price),
-                    `${fill.slippage_bps.toFixed(1)} bps`
-                  ])}
-                  emptyMessage="No fills are recorded yet."
+                <span>Enable SEC fundamentals</span>
+              </label>
+              <label className="form-grid__wide">
+                <span>SEC user agent</span>
+                <input
+                  value={setupDraft.fundamentalsUserAgent}
+                  onChange={(event) => updateDraft("fundamentalsUserAgent", event.target.value)}
                 />
-              </Section>
-            </>
-          ) : null}
-
-          {activeScreen === "research" ? (
-            <>
-              <Section
-                title="Research Actions"
-                description="The UI drives the same backend research jobs as the CLI. Nothing bypasses the documented APIs."
-                actions={
-                  <div className="toolbar">
-                    <button type="button" className="button" disabled={activeAction === "build-dataset"} onClick={() => void runAction("build-dataset", () => buildDataset(researchAsOf || undefined), "Dataset snapshot built.")}>
-                      {activeAction === "build-dataset" ? "Building…" : "Build Dataset"}
-                    </button>
-                    <button type="button" className="button" disabled={activeAction === "train-model"} onClick={() => void runAction("train-model", () => trainModel(researchAsOf || undefined), "Training run completed.")}>
-                      {activeAction === "train-model" ? "Training…" : "Train Model"}
-                    </button>
-                    <button type="button" className="button" disabled={activeAction === "backtest-model"} onClick={() => void runAction("backtest-model", () => backtestModel(researchModelVersion || undefined), "Backtest run completed.")}>
-                      {activeAction === "backtest-model" ? "Backtesting…" : "Run Backtest"}
-                    </button>
-                    <button type="button" className="button" disabled={activeAction === "simulate-run"} onClick={() => void runAction("simulate-run", () => runSimulation({ asOf: researchAsOf || undefined, modelVersion: researchModelVersion || undefined }), "Simulation run completed.")}>
-                      {activeAction === "simulate-run" ? "Simulating…" : "Run Simulation"}
-                    </button>
-                  </div>
-                }
-              >
-                <div className="grid grid--two">
-                  <label>
-                    <span>As-of date</span>
-                    <input value={researchAsOf} onChange={(event) => setResearchAsOf(event.target.value)} placeholder="2026-04-15" />
-                  </label>
-                  <label>
-                    <span>Model version</span>
-                    <input value={researchModelVersion} onChange={(event) => setResearchModelVersion(event.target.value)} placeholder="latest model" />
-                  </label>
-                </div>
-              </Section>
-
-              <Section title="Dataset and Model Snapshot">
-                <div className="metrics-grid">
-                  <MetricCard label="Latest dataset" value={workspace?.datasets.latest_dataset_snapshot?.feature_set_version ?? "missing"} detail={workspace?.datasets.latest_dataset_snapshot ? `${workspace.datasets.latest_dataset_snapshot.row_count} rows` : "Run dataset build first."} />
-                  <MetricCard label="Model version" value={workspace?.models.latest_model?.version ?? "none"} detail={workspace?.models.latest_model?.promotion_status ?? "research-only"} />
-                  <MetricCard label="Validation folds" value={workspace?.models.latest_validation_run ? String(workspace.models.latest_validation_run.fold_count) : "0"} detail={workspace?.models.latest_validation_run?.status ?? "No validation run yet."} />
-                  <MetricCard label="Backtest" value={workspace?.models.latest_backtest_run?.status ?? "not run"} detail={workspace?.models.latest_backtest_run?.benchmark_symbol ?? "No benchmark yet."} />
-                </div>
-                <KeyValueList
-                  rows={[
-                    { label: "Feature versions", value: workspace?.datasets.feature_set_versions.map((item) => item.version).join(", ") || "none" },
-                    { label: "Label versions", value: workspace?.datasets.label_versions.map((item) => item.version).join(", ") || "none" },
-                    { label: "Promotion reasons", value: workspace?.models.latest_model?.promotion_reasons.join(", ") || "none" },
-                    { label: "Backtest artifact", value: workspace?.models.latest_backtest_run?.artifact_path ?? "n/a" }
-                  ]}
+              </label>
+              <label className="form-grid__wide">
+                <span>Stock candidates</span>
+                <textarea
+                  rows={4}
+                  value={setupDraft.stockCandidates}
+                  onChange={(event) => updateDraft("stockCandidates", event.target.value)}
                 />
-              </Section>
-            </>
-          ) : null}
-
-          {activeScreen === "data" ? (
-            <>
-              <Section
-                title="Market Data Control"
-                description="Backfills stay explicit so the operator can see universe shape, provider corroboration, and incident counts."
-                actions={
-                  <button type="button" className="button" disabled={activeAction === "backfill"} onClick={() => void runAction("backfill", () => backfillMarketData({ asOf: backfillAsOf || undefined, lookbackDays: Number(backfillLookbackDays), symbols: parseSymbolList(backfillSymbols) }), "Market-data backfill completed.")}>
-                    {activeAction === "backfill" ? "Backfilling…" : "Run Backfill"}
-                  </button>
-                }
-              >
-                <div className="grid grid--three">
-                  <label>
-                    <span>Symbols</span>
-                    <textarea value={backfillSymbols} onChange={(event) => setBackfillSymbols(event.target.value)} rows={3} />
-                  </label>
-                  <label>
-                    <span>As-of date</span>
-                    <input value={backfillAsOf} onChange={(event) => setBackfillAsOf(event.target.value)} placeholder="2026-04-15" />
-                  </label>
-                  <label>
-                    <span>Lookback days</span>
-                    <input value={backfillLookbackDays} onChange={(event) => setBackfillLookbackDays(event.target.value)} />
-                  </label>
-                </div>
-              </Section>
-
-              <Section title="Data Quality">
-                <div className="metrics-grid">
-                  <MetricCard label="Latest backfill" value={workspace?.market_data.latest_run?.status ?? "not run"} detail={workspace?.market_data.latest_run?.completed_at ? formatDateTime(workspace.market_data.latest_run.completed_at) : "No completed backfill."} />
-                  <MetricCard label="Universe" value={workspace?.market_data.latest_universe_snapshot ? `${workspace.market_data.latest_universe_snapshot.stock_count} stocks` : "missing"} detail={workspace?.market_data.latest_universe_snapshot ? `${workspace.market_data.latest_universe_snapshot.etf_count} ETFs` : "No universe snapshot."} />
-                  <MetricCard label="Verified bars" value={String(workspace?.market_data.validation_counts.verified ?? 0)} detail={`Provisional ${workspace?.market_data.validation_counts.provisional ?? 0}`} />
-                  <MetricCard label="Fundamentals" value={String(workspace?.market_data.fundamentals_observation_count ?? 0)} detail="Availability-aware SEC observations." />
-                </div>
-                <DataTable
-                  columns={["Symbol", "Date", "Domain", "Status", "Providers"]}
-                  rows={(workspace?.market_data.recent_incidents ?? []).map((incident) => [
-                    incident.symbol,
-                    incident.trade_date,
-                    incident.domain,
-                    incident.resolution_status,
-                    incident.involved_providers.join(", ")
-                  ])}
-                  emptyMessage="No unresolved or recent data incidents."
+              </label>
+              <label className="form-grid__wide">
+                <span>Curated ETFs</span>
+                <textarea
+                  rows={3}
+                  value={setupDraft.curatedEtfs}
+                  onChange={(event) => updateDraft("curatedEtfs", event.target.value)}
                 />
-              </Section>
-            </>
-          ) : null}
+              </label>
+            </div>
+          </SectionCard>
 
-          {activeScreen === "system" ? (
-            <>
-              <Section
-                title="Mode Controls"
-                description="Mode changes stay deliberate. Live-manual remains the default live profile and autonomous mode demands an explicit acknowledgement."
-                actions={
-                  <div className="toolbar">
-                    <button type="button" className="button" disabled={activeAction === "mode-simulation"} onClick={() => void runAction("mode-simulation", () => updateMode("simulation"), "System switched to simulation mode.")}>
-                      {activeAction === "mode-simulation" ? "Switching…" : "Simulation"}
-                    </button>
-                    <button type="button" className="button" disabled={activeAction === "mode-paper"} onClick={() => void runAction("mode-paper", () => updateMode("paper"), "System entered paper mode.")}>
-                      {activeAction === "mode-paper" ? "Switching…" : "Paper"}
-                    </button>
-                    <button type="button" className="button" disabled={activeAction === "mode-live-manual"} onClick={() => void runAction("mode-live-manual", () => updateMode("live-manual"), "Live-manual arm request submitted.")}>
-                      {activeAction === "mode-live-manual" ? "Arming…" : "Live Manual"}
-                    </button>
-                    <button type="button" className="button button--danger" disabled={activeAction === "mode-live-autonomous"} onClick={() => void runAction("mode-live-autonomous", () => updateMode("live-autonomous", ackDisableApprovals), "Live-autonomous arm request submitted.")}>
-                      {activeAction === "mode-live-autonomous" ? "Arming…" : "Live Autonomous"}
-                    </button>
-                    <label className="checkbox checkbox--inline">
-                      <input type="checkbox" checked={ackDisableApprovals} onChange={(event) => setAckDisableApprovals(event.target.checked)} />
-                      <span>Acknowledge approval bypass</span>
-                    </label>
-                  </div>
-                }
-              >
-                <div className="grid grid--two">
-                  <div>
-                    <p className="subtle-heading">Manual gate checks</p>
-                    <ChecksList checks={workspace?.live.gates.manual.checks ?? []} />
-                  </div>
-                  <div>
-                    <p className="subtle-heading">Autonomous gate checks</p>
-                    <ChecksList checks={workspace?.live.gates.autonomous.checks ?? []} />
-                  </div>
-                </div>
-              </Section>
-
-              <Section title="Doctor Checks and Audit Trail">
-                <div className="grid grid--two">
-                  <div>
-                    <p className="subtle-heading">Doctor checks</p>
-                    <ChecksList checks={workspace?.health.checks ?? []} />
-                  </div>
-                  <div>
-                    <p className="subtle-heading">Audit events</p>
-                    <AuditFeed items={workspace?.system.audit_events ?? []} />
-                  </div>
-                </div>
-              </Section>
-
-              <Section title="Operational Logs" description="Recent structured runtime events from the local logs directory help explain failures that are broader than a single audit event.">
-                <OperationalLogFeed items={workspace?.system.logs ?? []} />
-              </Section>
-
-              <Section title="System Snapshot">
-                <KeyValueList
-                  rows={[
-                    { label: "Initialized", value: String(workspace?.setup.initialized ?? false) },
-                    { label: "Database", value: workspace?.setup.database_path ?? "n/a" },
-                    { label: "Mode", value: workspace?.system.status.mode ? String(workspace.system.status.mode) : "n/a" },
-                    { label: "Schema version", value: workspace?.system.status.schema_version ? String(workspace.system.status.schema_version) : "n/a" },
-                    { label: "App home", value: workspace?.system.status.app_home ? String(workspace.system.status.app_home) : "n/a" },
-                    { label: "Logs dir", value: workspace?.config.logs_dir ? String(workspace.config.logs_dir) : "n/a" }
-                  ]}
+          <SectionCard title="Broker and safety" description="These settings are only needed if you plan to move beyond simulation.">
+            <div className="form-grid">
+              <label className="checkbox form-grid__wide">
+                <input
+                  type="checkbox"
+                  checked={setupDraft.brokerEnabled}
+                  onChange={(event) => updateDraft("brokerEnabled", event.target.checked)}
                 />
-              </Section>
-            </>
-          ) : null}
-        </section>
-      </div>
+                <span>Enable broker integration</span>
+              </label>
+              <label>
+                <span>Operator name</span>
+                <input value={setupDraft.operatorName} onChange={(event) => updateDraft("operatorName", event.target.value)} />
+              </label>
+              <label>
+                <span>Paper account id</span>
+                <input value={setupDraft.paperAccountId} onChange={(event) => updateDraft("paperAccountId", event.target.value)} />
+              </label>
+              <label>
+                <span>Live account id</span>
+                <input value={setupDraft.liveAccountId} onChange={(event) => updateDraft("liveAccountId", event.target.value)} />
+              </label>
+              <label>
+                <span>Gateway base URL</span>
+                <input value={setupDraft.gatewayBaseUrl} onChange={(event) => updateDraft("gatewayBaseUrl", event.target.value)} />
+              </label>
+              <label>
+                <span>Default mode</span>
+                <select value={setupDraft.defaultMode} onChange={(event) => updateDraft("defaultMode", event.target.value)}>
+                  <option value="simulation">simulation</option>
+                  <option value="paper">paper</option>
+                </select>
+              </label>
+              <label>
+                <span>Live profile</span>
+                <select value={setupDraft.liveProfile} onChange={(event) => updateDraft("liveProfile", event.target.value)}>
+                  <option value="manual">manual</option>
+                  <option value="autonomous">autonomous</option>
+                </select>
+              </label>
+              <label>
+                <span>Daily loss cap</span>
+                <input value={setupDraft.dailyLossCap} onChange={(event) => updateDraft("dailyLossCap", event.target.value)} />
+              </label>
+              <label>
+                <span>Drawdown freeze</span>
+                <input value={setupDraft.drawdownFreeze} onChange={(event) => updateDraft("drawdownFreeze", event.target.value)} />
+              </label>
+            </div>
+          </SectionCard>
+        </div>
+      ) : null}
     </main>
   );
 }

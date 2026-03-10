@@ -82,8 +82,10 @@ function createWorkspace(): WorkspaceSnapshot {
       mode: "simulation",
       ui_url: "http://127.0.0.1:8000",
       checks: [
+        { name: "database-connectivity", ok: true, detail: "sqlite reachable" },
         { name: "primary-provider", ok: true, detail: "stooq" },
-        { name: "fundamentals-provider", ok: true, detail: "SEC ready" }
+        { name: "fundamentals-provider", ok: true, detail: "SEC ready" },
+        { name: "broker-connectivity", ok: true, detail: "broker integration disabled in config" }
       ]
     },
     setup: {
@@ -128,7 +130,7 @@ function createWorkspace(): WorkspaceSnapshot {
     system: {
       status: {
         mode: "simulation",
-        schema_version: "phase6",
+        schema_version: "phase9",
         app_home: "/tmp/stocktradebot"
       },
       audit_events: [{ id: 1, category: "runtime", message: "runtime prepared", created_at: "2026-03-09T10:00:00Z" }],
@@ -443,28 +445,23 @@ describe("App", () => {
     }) as typeof fetch;
   });
 
-  it("shows operational logs on the system screen", async () => {
+  it("renders the simplified overview with essential trading information", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Top Signals")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "System" }));
-
-    expect(await screen.findByText("Operational Logs")).toBeInTheDocument();
-    expect(screen.getAllByText("runtime prepared")).toHaveLength(2);
-    expect(screen.getByText(/"port": 8000/)).toBeInTheDocument();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("renders the operator dashboard instead of the old placeholder shell", async () => {
-    render(<App />);
-
-    expect(await screen.findByText("Top Signals")).toBeInTheDocument();
+    expect(await screen.findByText("Backtest profit")).toBeInTheDocument();
+    expect(screen.getByText("Profit after latest run")).toBeInTheDocument();
+    expect(screen.getByText("Stocks that need attention")).toBeInTheDocument();
     expect(screen.getByText("AAPL")).toBeInTheDocument();
-    expect(screen.getByText("Pending approvals")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
+  });
+
+  it("shows recent system activity on the activity screen", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Activity" }));
+
+    expect(await screen.findByText("Performance")).toBeInTheDocument();
+    expect(screen.getAllByText("runtime prepared")).toHaveLength(2);
   });
 
   it("saves setup changes through the config api", async () => {
@@ -473,9 +470,9 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Setup" }));
     const timezoneInput = await screen.findByDisplayValue("local");
     fireEvent.change(timezoneInput, { target: { value: "UTC" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save Setup" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save setup/i }));
 
-    await screen.findByText("Configuration saved.");
+    await screen.findByText("Setup saved.");
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
         "/api/v1/config",
@@ -487,7 +484,7 @@ describe("App", () => {
   it("processes manual approvals from the orders screen", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Orders/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Stocks/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
 
     await screen.findByText("Approved AAPL.");
@@ -497,5 +494,9 @@ describe("App", () => {
         expect.objectContaining({ method: "POST" })
       );
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 });

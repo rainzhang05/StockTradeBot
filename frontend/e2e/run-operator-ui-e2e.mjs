@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(frontendRoot, "..");
-const screenshotPath = path.join(repoRoot, "output", "playwright", "phase7-operator-ui.png");
+const screenshotPath = path.join(repoRoot, "output", "playwright", "clean-operator-ui.png");
 const previewHost = "127.0.0.1";
 const previewPort = 4173;
 const previewUrl = `http://${previewHost}:${previewPort}`;
@@ -160,10 +160,19 @@ function createWorkspace() {
     system: {
       status: {
         mode: "simulation",
-        schema_version: "phase6",
+        schema_version: "phase9",
         app_home: "/tmp/stocktradebot"
       },
-      audit_events: [{ id: 1, category: "runtime", message: "runtime prepared", created_at: "2026-03-09T10:00:00Z" }]
+      audit_events: [{ id: 1, category: "runtime", message: "runtime prepared", created_at: "2026-03-09T10:00:00Z" }],
+      logs: [
+        {
+          timestamp: "2026-03-09T10:00:00Z",
+          level: "info",
+          category: "runtime",
+          message: "runtime prepared",
+          details: { port: 8000 }
+        }
+      ]
     },
     broker: { paper, live },
     market_data: {
@@ -504,23 +513,22 @@ async function main() {
     });
 
     await page.goto(previewUrl);
-    await page.getByText("Top Signals").waitFor();
+    await page.getByText("Backtest profit").waitFor();
     assert.equal(await page.getByText("AAPL").first().textContent(), "AAPL");
 
     await page.getByRole("button", { name: "Setup" }).click();
     await page.getByLabel("Timezone").fill("UTC");
-    await page.getByRole("button", { name: "Save Setup" }).click();
-    await page.getByText("Configuration saved.").waitFor();
+    await page.getByRole("button", { name: /Save setup/i }).click();
+    await page.getByText("Setup saved.").waitFor();
 
-    await page.getByRole("button", { name: "Research" }).click();
-    await page.getByRole("button", { name: "Train Model" }).click();
-    await page.getByText("Training run completed.").waitFor();
+    await page.getByRole("button", { name: "Overview" }).click();
+    await page.getByRole("button", { name: "Train model" }).click();
+    await page.getByText("Model training completed.").waitFor();
 
-    await page.getByRole("button", { name: "System" }).click();
-    await page.getByRole("button", { name: "Paper" }).click();
-    await page.getByText("System entered paper mode.").waitFor();
+    await page.getByRole("button", { name: "Paper", exact: true }).click();
+    await page.getByText("Paper selected.").waitFor();
 
-    await page.getByRole("button", { name: "Orders" }).click();
+    await page.getByRole("button", { name: /Stocks/i }).click();
     await page.getByRole("button", { name: "Approve", exact: true }).click();
     await page.getByText("Approved AAPL.").waitFor();
 

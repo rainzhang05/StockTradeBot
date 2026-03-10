@@ -22,7 +22,7 @@ Expected behavior:
 
 ## First-Run Setup
 
-Complete the `Setup` screen in this order:
+Complete the `Setup` view in this order:
 
 1. confirm storage paths for the database, artifacts, and logs
 2. set the primary provider and optional secondary corroboration provider
@@ -36,13 +36,14 @@ Complete the `Setup` screen in this order:
 
 Typical daily sequence:
 
-1. open `Dashboard` and confirm current mode, freeze status, broker state, and latest jobs
-2. review `Data` for recent incidents and canonicalization health
-3. run a backfill when the universe or latest bars are stale
+1. open `Overview` and confirm current mode, readiness, freeze status, backtest return, and latest run profit
+2. review the readiness card and recent activity feed for broker or data issues
+3. run `Refresh data` when the universe or latest bars are stale
 4. run an intraday backfill and intraday validation from the CLI or API when intraday research needs refreshing
-5. build a dataset, train, and backtest from `Research` when model refresh is needed
-6. run `Simulation` first, then `Paper` when broker connectivity is healthy
-7. enter `Live Manual` only after paper safe-day gates and approval requirements are satisfied
+5. use `Train model` and `Run backtest` from `Overview` when model refresh is needed
+6. review `Stocks` for symbol-by-symbol status and any pending approvals
+7. run `Simulation` first, then `Paper` when broker connectivity is healthy
+8. enter `Live Manual` only after paper safe-day gates and approval requirements are satisfied
 
 ## Mode Safety Rules
 
@@ -52,14 +53,15 @@ Typical daily sequence:
 - `live-autonomous` is harder to enter and requires an explicit approval-bypass acknowledgement
 - `frozen` blocks new order submission until the freeze is understood and cleared
 
-## Logs and Audit Trail
+## Activity Feed
 
-Current operator-facing diagnostics include:
+Current operator-facing diagnostics are shown in `Activity` and include:
 
-- `System -> Audit events`: persisted state-changing actions
-- `System -> Operational logs`: recent structured runtime events from `logs/events.jsonl`
+- recent state-changing audit messages
+- recent structured runtime events rendered as plain-language entries
+- recent orders and fills
 
-Use the audit feed to answer what changed. Use the operational logs to answer what happened around a failure.
+Use the activity feed to answer what changed and what happened around a failure without exposing raw JSON payloads by default.
 
 ## Recommended Pre-Live Checklist
 
@@ -67,7 +69,7 @@ Before any live arming:
 
 1. `doctor` passes without blocking checks
 2. the latest data incident list is empty for tradable symbols
-3. the latest model and dataset versions are visible in the dashboard
+3. the latest model and backtest return are visible in `Overview`
 4. paper safe-day history satisfies the manual or autonomous gate
 5. there is no active freeze
-6. the operator has reviewed the latest logs and audit events for unexpected failures
+6. the operator has reviewed the latest activity feed for unexpected failures

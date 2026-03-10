@@ -8,34 +8,32 @@ The UI must be:
 
 - clear before clever
 - black-and-white dominant
-- information-dense but not visually noisy
+- professional, calm, and non-technical in tone
 - explicit about safety state
-- usable by one operator monitoring the system locally
+- focused on the few decisions the operator actually needs to make
 
-Color should be reserved for alarms, live-mode emphasis, and outcome signals rather than decoration.
+The product is still a local trading platform, but the presentation should feel closer to a polished consumer-grade control surface than an internal engineering console.
+
+Color should be reserved for alarms, live-mode emphasis, and performance direction rather than decoration.
 
 ## 2. Core Screens
 
-The UI must include these top-level areas:
+The current top-level UI is intentionally consolidated into four areas:
 
+- `Overview`
+  - current mode, readiness, freeze status, backtest return, latest run profit, portfolio value, quick actions, and recent activity
+- `Stocks`
+  - stock-by-stock status, target weights, latest order or fill state, and approval actions when needed
+- `Activity`
+  - recent performance, orders, fills, and a clean event feed without raw JSON dumps
 - `Setup`
-  - first-run flow, provider setup, broker configuration, readiness checks
-- `Dashboard`
-  - current mode, health, freeze status, latest signals, portfolio summary, and recent activity
-- `Portfolio`
-  - positions, target portfolio, weights, PnL, equity curve, and cash state
-- `Orders`
-  - order intents, approvals, open orders, fills, cancellations, and execution diagnostics
-- `Research`
-  - dataset versions, model versions, backtests, validation summaries, and promotion status
-- `Data`
-  - universe status, provider health, backfill jobs, data-quality incidents, and canonicalization stats
-- `System`
-  - logs, configuration, scheduler status, secrets readiness, and diagnostics
+  - first-run guidance, provider setup, broker configuration, storage paths, and safety defaults
+
+The backend still exposes richer subsystems such as data, research, portfolio, orders, and system status, but the default UI surface should present them through these simplified views instead of many separate operator screens.
 
 ## 3. First-Run Setup Flow
 
-The first-run wizard must guide the user through:
+The first-run flow must guide the user through:
 
 1. choosing the runtime storage location
 2. initializing the local database and artifact directories
@@ -55,6 +53,7 @@ Mode presentation rules:
 - make `simulation` and `paper` visibly distinct
 - make any live mode visually unmistakable
 - show the current arming state and freeze state separately
+- keep the mode-change controls easy to find from `Overview`
 
 Live modes must display:
 
@@ -85,37 +84,53 @@ The operator must be able to:
 
 The UI must not make autonomous mode easier to trigger than manual mode.
 
-## 6. Required Dashboard Elements
+## 6. Required Overview Elements
 
-The dashboard must expose at minimum:
+`Overview` must expose at minimum:
 
 - active mode and profile
+- current readiness or attention state
 - current freeze status and reason if present
-- broker connectivity
-- data freshness and provider incident counts
-- active model version and dataset version
-- portfolio NAV, cash, and day PnL
-- top signals and planned rebalances
-- recent orders and fills
-- most recent completed jobs
+- latest backtest return
+- latest run profit or loss
+- portfolio NAV and cash
+- pending approval count
+- a short readiness summary covering database, market data, fundamentals, and broker state
+- quick actions for backfill, training, backtest, simulation, paper, and live preparation
+- recent activity in plain language
 
-## 7. Visual System Rules
+## 7. Required Stock Status Elements
+
+`Stocks` must expose at minimum:
+
+- symbol
+- current score or conviction signal
+- target weight
+- latest price
+- current status such as ready, awaiting approval, submitted, filled, or paused
+- latest action time
+- approve or reject controls when a pending live-manual approval exists
+
+The stock view must avoid showing raw payloads, internal IDs, or backend response objects by default.
+
+## 8. Visual System Rules
 
 Visual direction:
 
 - primary palette: black, white, gray
 - accent palette: limited and reserved for alerts or explicit status distinctions
 - typography: neutral and highly legible
-- layouts: panel-based, compact, and tabular where appropriate
+- layouts: spacious cards, clear tables, and smooth corner radii
+- motion: minimal and purposeful
 
-Do not introduce marketing-style visuals, playful gradients, or decorative motion into the operator UI.
+Do not introduce marketing-style visuals, playful gradients, decorative motion, or raw JSON/debug panels into the operator UI.
 
-## 8. API Dependence
+## 9. API Dependence
 
 The frontend depends on backend APIs for:
 
 - setup and readiness state
-- health and logs
+- health and recent activity
 - data ingest and validation jobs
 - positions, orders, fills, and portfolio summaries
 - model and backtest results
