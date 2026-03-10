@@ -60,6 +60,8 @@ package-check:
 	$$TMPDIR/venv/bin/python -m pip install dist/*.whl httpx && \
 	$$TMPDIR/venv/bin/stocktradebot init --app-home $$TMPDIR/app && \
 	$$TMPDIR/venv/bin/stocktradebot doctor --app-home $$TMPDIR/app && \
+	$$TMPDIR/venv/bin/stocktradebot status --app-home $$TMPDIR/app >/dev/null && \
+	$$TMPDIR/venv/bin/stocktradebot --app-home $$TMPDIR/app --check-only --no-browser && \
 	APP_HOME=$$TMPDIR/app $$TMPDIR/venv/bin/python -c "import os; from pathlib import Path; from fastapi.testclient import TestClient; from stocktradebot.api import create_app; from stocktradebot.config import initialize_config; config = initialize_config(Path(os.environ['APP_HOME'])); client = TestClient(create_app(config)); html = client.get('/').text; assert 'Frontend Build Missing' not in html; assert 'id=\"root\"' in html" && \
 	rm -rf $$TMPDIR
 

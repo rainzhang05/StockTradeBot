@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from importlib import resources
 from pathlib import Path
 
 from alembic.config import Config as AlembicConfig
@@ -761,18 +762,28 @@ def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def package_root() -> Path:
-    return Path(__file__).resolve().parent
+def _packaged_resource_path(relative_path: str) -> Path | None:
+    package_files = resources.files("stocktradebot")
+    candidate = Path(str(package_files.joinpath(relative_path)))
+    return candidate if candidate.exists() else None
 
 
 def migration_paths() -> tuple[Path, Path]:
-    packaged_ini = package_root() / "alembic.ini"
-    packaged_scripts = package_root() / "alembic"
-    if packaged_ini.exists() and packaged_scripts.exists():
+    packaged_ini = _packaged_resource_path("alembic.ini")
+    packaged_scripts = _packaged_resource_path("alembic")
+    if packaged_ini is not None and packaged_scripts is not None:
         return packaged_ini, packaged_scripts
 
     root = repository_root()
-    return root / "alembic.ini", root / "alembic"
+    repository_ini = root / "alembic.ini"
+    repository_scripts = root / "alembic"
+    if repository_ini.exists() and repository_scripts.exists():
+        return repository_ini, repository_scripts
+
+    raise FileNotFoundError(
+        "Alembic migration assets are missing from both the installed package and the "
+        "repository checkout. Reinstall StockTradeBot from a fresh build."
+    )
 
 
 def alembic_config(database_url: str) -> AlembicConfig:
@@ -790,7 +801,7 @@ def create_db_engine(config: AppConfig) -> Engine:
 def initialize_database(config: AppConfig) -> None:
     config.ensure_runtime_dirs()
     command.upgrade(alembic_config(config.database_url()), "head")
-    upsert_app_state(config, "schema_version", "phase6")
+    upsert_app_state(config, "schema_version", "phase9")
     ensure_system_mode_state(config)
 
 

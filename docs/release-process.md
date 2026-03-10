@@ -19,7 +19,7 @@ stocktradebot
 2. build the frontend bundle from `frontend/`
 3. run `make check`
 4. run `make package-check`
-5. confirm the package smoke test installs the built artifact in isolation and serves the bundled UI
+5. confirm the package smoke test installs the built artifact in isolation, runs `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`, and serves the bundled UI
 6. update `README.md`, `docs/current-state.md`, and any operator-facing docs changed by the release
 7. create a tag only after the verification results are complete and recorded
 
@@ -30,7 +30,7 @@ When a release changes the available research surface, update the root README ex
 The package verification step is only complete when all of the following hold:
 
 - the wheel builds successfully
-- the installed CLI can run `init`, `doctor`, and `status`
+- the installed CLI can run `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`
 - the installed runtime can serve `/` without falling back to the placeholder page
 
 ## Release Notes Minimum Content

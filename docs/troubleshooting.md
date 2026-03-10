@@ -11,8 +11,22 @@ Symptoms:
 Checks:
 
 1. if running from source, build the frontend with `cd frontend && npm run build`
-2. if running from an installed package, rebuild the release artifact because packaged frontend assets should already be bundled
-3. confirm `System -> Operational logs` does not show frontend asset lookup failures
+2. if running from an installed package, rebuild or reinstall the release artifact because packaged frontend assets should already be bundled
+3. confirm the recent activity feed does not show frontend asset lookup failures
+
+## `stocktradebot` Fails With A Missing `alembic` Path
+
+Symptoms:
+
+- the CLI exits with a traceback ending in `Path doesn't exist: .../alembic`
+
+Fix:
+
+1. reinstall from a fresh current build so the packaged Alembic assets are included
+2. rerun `stocktradebot doctor`
+3. rerun `stocktradebot --check-only --no-browser` before launching the full runtime
+
+This failure usually means the installed package is stale or missing bundled migration assets, not that your local app data is wrong.
 
 ## `doctor` Fails On Fundamentals Provider
 
@@ -44,13 +58,13 @@ Fix:
 
 Symptoms:
 
-- dataset build, training, backtest, or simulation endpoints fail due to missing universe snapshots
+- training, backtest, or simulation actions fail due to missing universe snapshots
 
 Fix:
 
-1. run a market-data backfill from the `Data` screen or CLI
-2. confirm `Data` now shows a latest universe snapshot and a completed backfill
-3. retry dataset build or training
+1. run `Refresh data` from `Overview` or use the CLI backfill command
+2. confirm the latest activity feed now shows a completed backfill
+3. retry training or simulation
 
 ## Intraday Validation Returns `Expand the intraday history first`
 
@@ -72,17 +86,16 @@ Symptoms:
 
 Checks:
 
-1. inspect the active freeze reason on `Dashboard` or `System`
-2. inspect `Data` for unresolved incidents
-3. inspect `System -> Operational logs` for the failure that triggered the freeze
+1. inspect the active freeze reason in `Overview`
+2. inspect the recent activity feed for the failure that triggered the freeze
+3. inspect the latest data incident summary and broker readiness state
 4. resolve the underlying data, broker, or model issue before retrying a mode change
 
 ## Where To Look First During Any Failure
 
 Use this order:
 
-1. `System -> Operational logs`
-2. `System -> Audit events`
-3. `Dashboard` freeze and broker status cards
-4. `Data` incidents and latest backfill summary
-5. CLI `stocktradebot doctor`
+1. `Overview`
+2. `Activity`
+3. `Stocks`
+4. CLI `stocktradebot doctor`

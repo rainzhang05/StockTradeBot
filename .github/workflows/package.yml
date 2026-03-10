@@ -43,6 +43,8 @@ jobs:
           APP_HOME="$RUNNER_TEMP/stocktradebot-package-smoke"
           .package-smoke/bin/stocktradebot init --app-home "$APP_HOME"
           .package-smoke/bin/stocktradebot doctor --app-home "$APP_HOME"
+          .package-smoke/bin/stocktradebot status --app-home "$APP_HOME" >/dev/null
+          .package-smoke/bin/stocktradebot --app-home "$APP_HOME" --check-only --no-browser
           APP_HOME="$APP_HOME" .package-smoke/bin/python - <<'PY'
           import os
           from pathlib import Path
