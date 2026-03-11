@@ -65,6 +65,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - removed raw JSON-style operational panels from the default operator experience and replaced them with plain-language activity summaries, essential performance cards, and stock-by-stock status actions
 - polished the operator frontend into a more production-grade visual system with a calmer header, improved spacing rhythm, consistent surfaces and radii, clearer action and mode controls, higher-contrast feedback banners, and browser-verified visual refinements across all four views
 - refined the four top-level view tabs so the active black tab remains visually fixed without any hover lift or hover-state color shift, while inactive tabs still show hover affordances
+- rewrote the root `README.md` into a simpler end-user quickstart format, added a dedicated `docs/commands.md` plain-language CLI reference, updated the docs index to include it, and added a README screenshot asset under `docs/assets/`
 - hardened runtime migration lookup so installed packages prefer bundled Alembic assets, fall back to repository assets only when appropriate, and fail with a clear reinstall message when both are missing
 - updated package smoke verification so installed builds must pass `stocktradebot status` and `stocktradebot --check-only --no-browser` in addition to the existing `init`, `doctor`, and bundled-frontend checks
 - corrected the persisted app-state schema marker written during database bootstrap from `phase6` to `phase9`
@@ -129,6 +130,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - repository verification: `make check` passed locally after the Phase 9 intraday implementation
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, verify `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`, and confirm the installed runtime serves the bundled UI
 - browser screenshot review: refreshed locally via the existing Playwright E2E lane at `output/playwright/clean-operator-ui.png`
+- documentation path review: confirmed the updated root README links resolve to `docs/README.md`, `docs/commands.md`, and `docs/assets/stocktradebot-ui-sample.png`
 - editable install smoke: passed locally from a fresh source copy with `frontend/dist` removed, using `python -m pip install -e ".[dev]"` under Python 3.14
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
 - backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
@@ -136,4 +138,4 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
-- 2026-03-10: refined the operator UI interaction polish so active top-level tabs no longer animate on hover, reverified the repository with `make check`, and updated the docs to reflect the latest UI state
+- 2026-03-10: rewrote the root README into a simpler package-facing format, added a plain-language command guide under `docs/`, validated the updated docs paths and image asset, and updated the docs to reflect the latest documentation surface
