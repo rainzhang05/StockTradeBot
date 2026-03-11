@@ -16,8 +16,9 @@ Read the documents in this order:
 8. [`product-ui.md`](/Users/rainzhang/StockTradeBot/docs/product-ui.md) for operator flows and UI requirements
 9. [`engineering.md`](/Users/rainzhang/StockTradeBot/docs/engineering.md) for code quality, testing, CI, security, and release rules
 10. [`operator-guide.md`](/Users/rainzhang/StockTradeBot/docs/operator-guide.md) for supported operator workflows and safety usage
-11. [`troubleshooting.md`](/Users/rainzhang/StockTradeBot/docs/troubleshooting.md) for common failures and recovery paths
-12. [`release-process.md`](/Users/rainzhang/StockTradeBot/docs/release-process.md) for release verification and packaging workflow
+11. [`commands.md`](/Users/rainzhang/StockTradeBot/docs/commands.md) for a straightforward end-user CLI command guide
+12. [`troubleshooting.md`](/Users/rainzhang/StockTradeBot/docs/troubleshooting.md) for common failures and recovery paths
+13. [`release-process.md`](/Users/rainzhang/StockTradeBot/docs/release-process.md) for release verification and packaging workflow
 
 Agents must read every file under `docs/` in full before changing the project. The reading order above is the minimum required route through the documentation.
 
@@ -45,6 +46,7 @@ If two files conflict, contributors must stop and resolve the documentation mism
 - `product-ui.md`: operator-facing UX and setup experience
 - `engineering.md`: development workflow, test policy, CI, observability, and release discipline
 - `operator-guide.md`: operator-facing install, setup, and daily workflow guidance
+- `commands.md`: plain-language command reference for the shipped CLI
 - `troubleshooting.md`: common issue diagnosis and recovery guidance
 - `release-process.md`: release checklist and packaged runtime smoke expectations
 
