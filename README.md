@@ -1,58 +1,36 @@
-# StockTradeBot
+# Stock Trade Bot
 
-Phase 9 intraday research expansion is implemented. The repository now includes the local-first Python package and FastAPI runtime, SQLite plus Alembic persistence, a React operator dashboard under `frontend/`, free-source daily and intraday market-data backfill, SEC-derived approximate fundamentals, availability-aware daily and intraday feature engineering, deterministic walk-forward validation, event-driven backtesting, a persisted simulation execution stack, IBKR Client Portal paper/live broker boundaries with manual live approvals and autonomous gating, release-grade packaged frontend serving, structured operational logs, and operator-facing intraday research APIs and CLI flows.
+CLI-first stock trading bot with a browser-based operator workspace for research, simulation, paper trading, and live operations.
 
-## Release Install Flow
+<p align="center">
+  <img src="docs/assets/stocktradebot-ui-sample.png" alt="Stock Trade Bot operator workspace sample" width="620">
+</p>
+
+Stock Trade Bot packages the repository's documented local-first stock trading workflow into a single `stocktradebot` command. By default it prepares the runtime and opens the operator workspace in the browser, while the full direct command surface remains available for setup, data backfill, intraday research, backtesting, simulation, paper trading, and live runtime tasks.
+
+## Quickstart
+
+Install `pipx` and the package:
 
 ```bash
+python3 -m pip install --user pipx
+pipx ensurepath
 pipx install stocktradebot
-stocktradebot init
-stocktradebot doctor
+```
+
+Open the app from anywhere in your terminal with:
+
+```bash
 stocktradebot
 ```
 
-The release package now bundles the built frontend so the installed app serves the operator UI without requiring a source checkout.
+`stocktradebot` launches the local runtime and opens the operator workspace after the package is installed.
 
-## Quick Start
+On first launch, `stocktradebot` creates the default application home under `~/.stocktradebot/`.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-cd frontend && npm install
-cd ..
-stocktradebot init
-stocktradebot doctor
-stocktradebot backfill --symbol AAPL --symbol MSFT --symbol SPY --lookback-days 180 --as-of 2026-04-15
-stocktradebot intraday-backfill --frequency 15min --symbol AAPL --symbol MSFT --symbol SPY --lookback-days 40 --as-of 2026-04-15
-stocktradebot intraday-dataset --frequency 15min --as-of 2026-04-15
-stocktradebot intraday-validate --frequency 15min --as-of 2026-04-15
-stocktradebot train --as-of 2026-04-15
-stocktradebot backtest
-stocktradebot simulate --as-of 2026-04-15
-stocktradebot paper
-stocktradebot report
-stocktradebot status
-stocktradebot --no-browser
-```
+## Docs
 
-## Local Commands
+- [Stock Trade Bot Documentation](docs/README.md)
+- [Commands](docs/commands.md)
 
-```bash
-make check
-make backend-quality
-make backend-tests
-make frontend-check
-make frontend-e2e
-make package-check
-```
-
-The documentation source of truth lives under [`docs/`](/Users/rainzhang/StockTradeBot/docs/README.md).
-
-The current implementation snapshot is tracked in [`docs/current-state.md`](/Users/rainzhang/StockTradeBot/docs/current-state.md).
-
-Additional operator-facing docs:
-
-- [`docs/operator-guide.md`](/Users/rainzhang/StockTradeBot/docs/operator-guide.md)
-- [`docs/troubleshooting.md`](/Users/rainzhang/StockTradeBot/docs/troubleshooting.md)
-- [`docs/release-process.md`](/Users/rainzhang/StockTradeBot/docs/release-process.md)
+This repository is licensed under the [MIT License](LICENSE).
