@@ -1,6 +1,6 @@
 # Stock Trade Bot
 
-CLI-first stock trading bot with a browser-based operator workspace for research, simulation, paper trading, and live operations.
+Stock trading bot with a browser-based operator workspace for research, simulation, paper trading, and live operations.
 
 <p align="center">
   <img src="docs/assets/stocktradebot-ui-sample.png" alt="Stock Trade Bot operator workspace sample" width="620">
