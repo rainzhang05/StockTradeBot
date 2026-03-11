@@ -30,7 +30,7 @@ On first launch, `stocktradebot` creates the default application home under `~/.
 
 ## Docs
 
-- [Stock Trade Bot Documentation](docs/README.md)
+- [Stock Trade Bot Documentation](docs/)
 - [Commands](docs/commands.md)
 
 This repository is licensed under the [MIT License](LICENSE).
