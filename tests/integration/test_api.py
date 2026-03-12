@@ -43,6 +43,7 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     broker = client.get("/api/v1/broker/status")
     paper = client.get("/api/v1/paper/status")
     live = client.get("/api/v1/live/status")
+    strategy_modes = client.get("/api/v1/operator/strategy-modes")
     workspace = client.get("/api/v1/operator/workspace")
 
     assert health.status_code == 200
@@ -93,9 +94,13 @@ def test_api_health_and_setup_endpoints(isolated_app_home) -> None:
     assert paper.json()["paper_safe_days"] == 0
     assert live.status_code == 200
     assert live.json()["safe_day_counts"]["paper"] == 0
+    assert strategy_modes.status_code == 200
+    assert strategy_modes.json()["defined_mode_count"] == 1
+    assert strategy_modes.json()["empty_mode_count"] == 3
     assert workspace.status_code == 200
     assert workspace.json()["health"]["status"] == "ok"
     assert workspace.json()["system"]["audit_events"] == []
+    assert workspace.json()["strategy_modes"]["defined_mode_count"] == 1
     assert any(item["category"] == "api" for item in workspace.json()["system"]["logs"])
 
 
@@ -184,6 +189,39 @@ def test_model_train_and_backtest_endpoints_require_research_prerequisites(
     assert (
         simulate_response.json()["detail"]
         == "No universe snapshots are available. Run backfill first."
+    )
+
+
+def test_strategy_mode_repair_endpoint_exposes_repair_summary(
+    isolated_app_home,
+    monkeypatch,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    initialize_database(config)
+    client = TestClient(create_app(config))
+
+    monkeypatch.setattr(
+        "stocktradebot.api.app.repair_strategy_mode_resources",
+        lambda *_args, **_kwargs: {
+            "status": "completed",
+            "performed_full_history_backfill": True,
+            "mode_results": [
+                {"key": "conservative", "status": "skipped"},
+                {"key": "balanced", "status": "skipped"},
+                {"key": "growth", "status": "completed"},
+                {"key": "aggressive", "status": "skipped"},
+            ],
+        },
+    )
+
+    response = client.post("/api/v1/operator/strategy-modes/repair")
+
+    assert response.status_code == 200
+    assert response.json()["repair"]["status"] == "completed"
+    assert response.json()["repair"]["performed_full_history_backfill"] is True
+    assert any(
+        item["key"] == "growth" and item["status"] == "completed"
+        for item in response.json()["repair"]["mode_results"]
     )
 
 

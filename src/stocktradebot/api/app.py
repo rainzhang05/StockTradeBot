@@ -51,6 +51,10 @@ from stocktradebot.storage import (
     initialize_database,
     record_audit_event,
 )
+from stocktradebot.strategy_modes import (
+    repair_strategy_mode_resources,
+    strategy_mode_workspace,
+)
 
 
 def _serialize_audit_events(config: AppConfig, *, limit: int = 25) -> list[dict[str, object]]:
@@ -240,6 +244,7 @@ def create_app(
             "market_data": market_data_job_status(),
             "datasets": dataset_status(config),
             "models": model_status(config),
+            "strategy_modes": strategy_mode_workspace(config),
             "risk": risk_status(),
             "portfolio": {
                 "status": portfolio_status(),
@@ -250,6 +255,34 @@ def create_app(
             "paper": paper_mode_status(),
             "live": live_mode_status(),
         }
+
+    @app.get("/api/v1/operator/strategy-modes")
+    def operator_strategy_modes() -> dict[str, object]:
+        return strategy_mode_workspace(current_config())
+
+    @app.post("/api/v1/operator/strategy-modes/repair")
+    def repair_operator_strategy_modes(as_of: str | None = None) -> dict[str, object]:
+        config = current_config()
+        try:
+            parsed_date = None if as_of is None else date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
+        try:
+            summary = repair_strategy_mode_resources(config, as_of_date=parsed_date)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record_operational_event(
+            config,
+            category="api:strategy-modes",
+            message="strategy mode resources repaired via API",
+            details={
+                "performed_full_history_backfill": summary["performed_full_history_backfill"],
+                "defined_mode_runs": [
+                    item["key"] for item in summary["mode_results"] if item["status"] == "completed"
+                ],
+            },
+        )
+        return {"repair": summary}
 
     @app.get("/api/v1/broker/status")
     def broker_state() -> dict[str, object]:
