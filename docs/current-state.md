@@ -92,6 +92,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - added backend strategy-profile readiness reporting that matches stored daily datasets, models, validations, and backtests against the currently defined strategy profiles
 - added a strategy-resource repair workflow that can initialize the local database, hydrate missing daily history, rebuild monthly universe snapshots when needed, and retrain plus backtest all currently defined strategy profiles
 - exposed strategy-profile readiness and the repair action through the operator workspace API and the default `Overview` UI, so operators can see which profiles are ready, stale, missing resources, or intentionally empty
+- added a repository-wide macOS `.DS_Store` ignore rule so Finder metadata files no longer appear as untracked repo noise
 
 ## Subsystem Status Matrix
 
@@ -170,3 +171,4 @@ This file describes the repository as it exists now. Update it at the end of eve
 ## Last Updated Because
 
 - 2026-03-12: added four-slot strategy-profile readiness and repair workflows, classified the current winning strategy as the `growth` profile, exposed the new API and Overview UI surfaces, reran backend plus frontend verification, and refreshed the docs to match the new operator workflow
+- 2026-03-12: added a repository-wide `.DS_Store` ignore rule and refreshed current state for the repo-hygiene update
