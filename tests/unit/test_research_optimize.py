@@ -36,8 +36,16 @@ def test_run_research_optimization_writes_ranked_report(
         lambda *_args: None,
     )
 
-    def fake_run_experiment(_config, *, label, experiment, as_of_date):
+    def fake_run_experiment(
+        _config,
+        *,
+        label,
+        experiment,
+        as_of_date,
+        trained_models=None,
+    ):
         assert as_of_date == date(2026, 3, 11)
+        assert isinstance(trained_models, dict)
         if label == "baseline":
             total_return = 0.04
             max_drawdown = -0.12
