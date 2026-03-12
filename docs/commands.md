@@ -117,11 +117,12 @@ stocktradebot intraday-validate --frequency 15min --as-of 2026-03-10
 
 ### `stocktradebot train`
 
-Trains the current model from the latest available daily dataset.
+Trains the current model from the latest available daily dataset. The default quality scope is `research`, which can use provisional daily bars for local research. Use `promotion` only when verified daily bars are available and candidate eligibility is required.
 
 Common options:
 
 - `--as-of YYYY-MM-DD`
+- `--quality-scope research|promotion`
 
 Example:
 
@@ -131,7 +132,7 @@ stocktradebot train --as-of 2026-03-10
 
 ### `stocktradebot backtest`
 
-Runs a backtest for the latest model or a specific model version.
+Runs a backtest for the latest model or a specific model version. Daily backtests now use the same target-portfolio construction path as simulation, including regime exposure, turnover penalties, defensive ETF handling, commissions, slippage, and partial-fill assumptions.
 
 Common options:
 
@@ -142,6 +143,22 @@ Example:
 ```bash
 stocktradebot backtest
 ```
+
+## Research Optimization Helper
+
+The repository also includes a research sweep helper for daily profit optimization:
+
+```bash
+./.venv/bin/python scripts/research_optimize.py
+```
+
+Behavior:
+
+- copies the source app home into an isolated runtime under `artifacts/research-optimize/`
+- runs the fixed daily `research` sweep across model family, rebalance interval, and portfolio-risk combinations
+- writes a machine-readable leaderboard report under `artifacts/reports/`
+
+Use `--source-app-home PATH`, `--output-path PATH`, or `--isolated-root PATH` when you want to control the research source or output locations.
 
 ### `stocktradebot simulate`
 

@@ -24,6 +24,7 @@ Alpha behavior:
 
 - output a cross-sectional ranking score per eligible symbol
 - support both stock and curated ETF candidates
+- support the documented daily model families: linear, gradient boosting, and rank ensembles
 - remain deterministic for a fixed dataset, feature set, and model artifact
 
 Regime behavior:
@@ -57,6 +58,7 @@ V1 baseline policy defaults:
 - sector exposure soft cap: `30%`
 - rebalance turnover soft cap per decision cycle: `25%` of NAV
 - minimum conviction threshold before opening a new position
+- daily research rebalance interval: `5` trading days so the default cadence matches the 5-day primary label horizon
 
 These numeric defaults belong in config, but the repository should launch with them unless superseded later.
 
@@ -165,6 +167,7 @@ Before a model becomes eligible for `live-manual`:
 - beat SPY net of estimated trading costs on the most recent out-of-sample segment
 - show acceptable regime-split behavior, including survivability in poor markets
 - complete at least `30` market days in paper mode without critical safety incidents
+- be trained and validated from `promotion`-scope datasets only
 
 Before a model becomes eligible for `live-autonomous`:
 
@@ -174,6 +177,7 @@ Before a model becomes eligible for `live-autonomous`:
 - have no open high-severity operational incidents
 
 Promotion decisions must remain explicit and auditable. No model promotes itself automatically.
+`research`-scope models are never promotable candidates, even if their research backtests are strong.
 
 ## 9. Backtesting Requirements
 
@@ -185,5 +189,6 @@ Backtests must be event-driven and include:
 - partial-fill logic
 - decision-to-execution delay assumptions
 - turnover and rebalance frictions
+- the same target-portfolio construction path used by simulation and execution
 
 Every backtest report must be linkable to code, data, features, labels, and model artifacts.

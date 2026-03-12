@@ -101,9 +101,9 @@ The following commands are part of the target stable interface:
 - `stocktradebot intraday-validate`
   - runs intraday walk-forward validation and emits an intraday validation artifact
 - `stocktradebot train`
-  - runs model training, validation, and registry publication for a specified dataset/feature version
+  - runs model training, validation, and registry publication for a specified dataset/feature version and quality scope
 - `stocktradebot backtest`
-  - runs event-driven backtests and emits reproducible reports
+  - runs event-driven backtests through the shared portfolio-construction path and emits reproducible reports
 - `stocktradebot simulate`
   - runs the simulation adapter, persists target portfolios, order intents, fills, and risk results
 - `stocktradebot paper`
@@ -155,7 +155,7 @@ Implementation must support persisted configuration for these families:
 - `risk`
   - drawdown caps, daily loss caps, turnover caps, sector caps, freeze thresholds, kill-switch policy
 - `model/training`
-  - feature set version, label version, training cadence, registry locations, validation thresholds
+  - feature set version, label version, training cadence, registry locations, validation thresholds, quality scope, supported model families, and rebalance interval
 - `UI preferences`
   - browser launch behavior, refresh intervals, compact/detailed tables, local notifications
 
@@ -187,6 +187,11 @@ Core persisted entities:
 - mode state and freeze events
 - account snapshots, positions, orders, fills, and execution events
 - system logs and audit events
+
+Research lineage rules:
+
+- dataset snapshots, model registry entries, validation runs, and backtest runs must persist the effective `quality_scope`
+- status and readiness reporting must distinguish `research-capable` from `promotion-blocked` daily data states
 
 Alembic migrations are mandatory from the first database version. Schema changes must be backward migratable or explicitly documented as breaking.
 

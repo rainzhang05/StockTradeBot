@@ -39,7 +39,8 @@ backend-quality:
 	$(MYPY) src
 
 backend-tests:
-	$(PYTEST) tests
+	rm -f .coverage .coverage.*
+	COVERAGE_PROCESS_START=$(CURDIR)/pyproject.toml COVERAGE_RCFILE=$(CURDIR)/pyproject.toml $(PYTEST) tests
 
 frontend-check:
 	cd frontend && npm run lint

@@ -32,12 +32,16 @@ Complete the `Setup` view in this order:
 6. run the doctor checks until the required prerequisites are green
 7. remain in `simulation` mode until backfill, research, and paper validation are complete
 
+Readiness note:
+
+- a Stooq-only runtime may show daily data as `research-capable` but `promotion-blocked`; that means daily research and backtests can run, but candidate promotion and live eligibility still require verified bars
+
 ## Daily Operator Workflow
 
 Typical daily sequence:
 
 1. open `Overview` and confirm current mode, readiness, freeze status, backtest return, and latest run profit
-2. review the readiness card and recent activity feed for broker or data issues
+2. review the readiness card and recent activity feed for broker or data issues, especially whether daily data is only `research-capable`
 3. run `Refresh data` when the universe or latest bars are stale
 4. run an intraday backfill and intraday validation from the CLI or API when intraday research needs refreshing
 5. use `Train model` and `Run backtest` from `Overview` when model refresh is needed

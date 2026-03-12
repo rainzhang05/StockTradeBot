@@ -83,6 +83,7 @@ Each normalized record must be assigned one of:
   - conflicts with another provider or fails sanity checks
 
 Only `verified` data may enter feature-ready datasets used for paper or live promotion decisions.
+Research-only datasets may use `verified` and `provisional` records when the dataset `quality_scope` is explicitly `research`.
 
 ### 5.2 Price-Bar Agreement Rules
 
@@ -181,7 +182,8 @@ V1 baseline labels:
 
 Label rules:
 
-- labels are computed from verified adjusted prices only
+- `promotion` labels are computed from verified adjusted prices only
+- `research` labels may be computed from the same bar set allowed by the dataset `quality_scope`
 - labels must align to the decision timestamp and available data at that time
 - label versions are explicit and stored with datasets and models
 
@@ -190,6 +192,7 @@ Label rules:
 Every dataset snapshot must record:
 
 - universe snapshot ID
+- quality scope
 - provider versions and extract time ranges
 - canonicalization rules version
 - feature set version
@@ -199,6 +202,7 @@ Every dataset snapshot must record:
 - row counts and null statistics
 
 Every trained model must link back to exactly one dataset snapshot.
+Research-only models must retain their `quality_scope` in registry, validation, and backtest records so promotion eligibility remains auditable.
 
 ## 10. Model Family and Registry Expectations
 
@@ -211,6 +215,7 @@ Production model families:
 Registry metadata must include:
 
 - model ID and semantic version
+- quality scope and promotion eligibility
 - training window
 - dataset snapshot ID
 - feature set version

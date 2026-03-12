@@ -90,6 +90,7 @@ The UI must not make autonomous mode easier to trigger than manual mode.
 
 - active mode and profile
 - current readiness or attention state
+- daily research readiness and promotion readiness when they differ
 - current freeze status and reason if present
 - latest backtest return
 - latest run profit or loss
