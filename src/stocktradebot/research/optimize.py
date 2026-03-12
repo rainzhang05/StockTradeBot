@@ -9,7 +9,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from stocktradebot.config import AppConfig, initialize_config
@@ -19,7 +19,6 @@ from stocktradebot.storage import (
     BacktestRun,
     CanonicalDailyBar,
     UniverseSnapshot,
-    UniverseSnapshotMember,
     create_db_engine,
     initialize_database,
     repository_root,
@@ -198,54 +197,52 @@ def _required_daily_trade_dates(config: AppConfig) -> int:
     )
 
 
+def _minimum_research_trade_dates(config: AppConfig) -> int:
+    # Keep at least roughly three years of daily history available for long-range research runs.
+    return max(_required_daily_trade_dates(config), 252 * 3)
+
+
 def _prepare_research_config(config: AppConfig) -> None:
     minimum_dataset_lookback_days = max(
         config.model_training.dataset_lookback_days,
-        _required_daily_trade_dates(config) * 2,
+        _minimum_research_trade_dates(config) * 2,
     )
     if config.model_training.dataset_lookback_days < minimum_dataset_lookback_days:
         config.model_training.dataset_lookback_days = minimum_dataset_lookback_days
         config.save()
 
 
+def _available_universe_snapshot_dates(config: AppConfig, as_of_date: date) -> int:
+    engine = create_db_engine(config)
+    try:
+        with Session(engine) as session:
+            count = session.scalar(
+                select(func.count(func.distinct(UniverseSnapshot.effective_date))).where(
+                    UniverseSnapshot.effective_date <= as_of_date
+                )
+            )
+    finally:
+        engine.dispose()
+    return int(count or 0)
+
+
 def _ensure_sufficient_history(config: AppConfig, as_of_date: date) -> None:
-    required_trade_dates = _required_daily_trade_dates(config)
+    required_trade_dates = _minimum_research_trade_dates(config)
     available_trade_dates = _available_daily_trade_dates(config, "research")
-    if available_trade_dates >= required_trade_dates:
+    available_snapshot_dates = _available_universe_snapshot_dates(config, as_of_date)
+    minimum_snapshot_dates = 12
+    if (
+        available_trade_dates >= required_trade_dates
+        and available_snapshot_dates >= minimum_snapshot_dates
+    ):
         return
     backfill_market_data(
         config,
         as_of_date=as_of_date,
         lookback_days=required_trade_dates,
+        full_history=True,
+        historical_snapshots=True,
     )
-
-
-def _normalize_universe_snapshots(config: AppConfig) -> None:
-    engine = create_db_engine(config)
-    try:
-        with Session(engine) as session:
-            latest_snapshot = session.scalar(
-                select(UniverseSnapshot).order_by(
-                    UniverseSnapshot.effective_date.desc(),
-                    UniverseSnapshot.id.desc(),
-                )
-            )
-            if latest_snapshot is None:
-                return
-            obsolete_ids = session.scalars(
-                select(UniverseSnapshot.id).where(UniverseSnapshot.id != latest_snapshot.id)
-            ).all()
-            if not obsolete_ids:
-                return
-            session.execute(
-                delete(UniverseSnapshotMember).where(
-                    UniverseSnapshotMember.snapshot_id.in_(obsolete_ids)
-                )
-            )
-            session.execute(delete(UniverseSnapshot).where(UniverseSnapshot.id.in_(obsolete_ids)))
-            session.commit()
-    finally:
-        engine.dispose()
 
 
 def _load_backtest_report(
@@ -503,7 +500,6 @@ def run_research_optimization(
 
     effective_as_of_date = as_of_date or _latest_daily_trade_date(config, "research")
     _ensure_sufficient_history(config, effective_as_of_date)
-    _normalize_universe_snapshots(config)
     trained_models: dict[str, str] = {}
     baseline = _run_experiment(
         config,

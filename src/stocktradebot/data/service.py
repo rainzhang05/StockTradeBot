@@ -35,6 +35,7 @@ from stocktradebot.data.providers.base import (
 )
 from stocktradebot.data.raw import persist_raw_payload
 from stocktradebot.data.universe import (
+    build_historical_universe_snapshots,
     build_universe_snapshot,
     resolve_curated_etfs,
     resolve_stock_candidates,
@@ -486,11 +487,24 @@ def _store_universe_snapshot(
     return snapshot_row.id
 
 
+def _backfill_start_date(
+    *,
+    as_of_date: date,
+    lookback_days: int,
+    full_history: bool,
+) -> date:
+    if full_history:
+        return date(1990, 1, 1)
+    return as_of_date - timedelta(days=max(lookback_days * 2, 45))
+
+
 def backfill_market_data(
     config: AppConfig,
     *,
     as_of_date: date | None = None,
     lookback_days: int = 120,
+    full_history: bool = False,
+    historical_snapshots: bool = False,
     symbols: Sequence[str] | None = None,
     providers: Sequence[DailyHistoryProvider] | None = None,
     fundamentals_provider: FundamentalsProvider | None = None,
@@ -503,7 +517,11 @@ def backfill_market_data(
         else _default_symbol_set(config)
     )
     effective_as_of_date = as_of_date or datetime.now(UTC).date()
-    start_date = effective_as_of_date - timedelta(days=max(lookback_days * 2, 45))
+    start_date = _backfill_start_date(
+        as_of_date=effective_as_of_date,
+        lookback_days=lookback_days,
+        full_history=full_history,
+    )
     selected_providers, primary_name, secondary_name = _resolve_provider_list(
         config,
         providers=providers,
@@ -528,7 +546,7 @@ def backfill_market_data(
                 domain="daily",
                 frequency="daily",
                 as_of_date=effective_as_of_date,
-                lookback_days=lookback_days,
+                lookback_days=(effective_as_of_date - start_date).days,
                 summary_json="{}",
             )
             session.add(run_row)
@@ -591,12 +609,26 @@ def backfill_market_data(
                 incidents=incidents,
             )
 
-            snapshot_record = build_universe_snapshot(
-                canonical_bars,
-                config=config,
-                as_of_date=effective_as_of_date,
-            )
-            snapshot_id = _store_universe_snapshot(session, snapshot_record=snapshot_record)
+            if historical_snapshots:
+                snapshot_records = build_historical_universe_snapshots(
+                    canonical_bars,
+                    config=config,
+                    as_of_date=effective_as_of_date,
+                )
+            else:
+                snapshot_records = (
+                    build_universe_snapshot(
+                        canonical_bars,
+                        config=config,
+                        as_of_date=effective_as_of_date,
+                    ),
+                )
+
+            snapshot_ids = [
+                _store_universe_snapshot(session, snapshot_record=snapshot_record)
+                for snapshot_record in snapshot_records
+            ]
+            snapshot_id = snapshot_ids[-1] if snapshot_ids else None
 
             validation_counts = dict(
                 sorted(Counter(bar.validation_tier for bar in canonical_bars).items())
@@ -617,6 +649,13 @@ def backfill_market_data(
                 "validation_counts": validation_counts,
                 "fetch_errors": fetch_errors,
                 "universe_snapshot_id": snapshot_id,
+                "full_history": full_history,
+                "historical_snapshots": historical_snapshots,
+                "historical_snapshot_count": len(snapshot_ids),
+                "snapshot_effective_dates": [
+                    snapshot_record.effective_date.isoformat()
+                    for snapshot_record in snapshot_records
+                ],
             }
             run_row.status = "completed_with_errors" if fetch_errors else "completed"
             run_row.summary_json = json.dumps(summary_payload, sort_keys=True)
@@ -645,6 +684,9 @@ def backfill_market_data(
                 providers_used=provider_names,
                 domain="daily",
                 frequency="daily",
+                full_history=full_history,
+                historical_snapshots=historical_snapshots,
+                historical_snapshot_count=len(snapshot_ids),
             )
     except Exception:
         with Session(engine) as session:

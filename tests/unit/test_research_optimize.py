@@ -31,10 +31,6 @@ def test_run_research_optimization_writes_ranked_report(
         "stocktradebot.research.optimize._prepare_research_config",
         lambda *_args: None,
     )
-    monkeypatch.setattr(
-        "stocktradebot.research.optimize._normalize_universe_snapshots",
-        lambda *_args: None,
-    )
 
     def fake_run_experiment(
         _config,

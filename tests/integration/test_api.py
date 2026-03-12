@@ -362,6 +362,8 @@ def test_phase7_market_data_backfill_endpoint_runs_job(
         params={
             "as_of": "2026-04-15",
             "lookback_days": 180,
+            "full_history": True,
+            "historical_snapshots": True,
             "symbol": ["AAPL", "MSFT"],
         },
     )

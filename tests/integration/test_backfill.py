@@ -12,6 +12,7 @@ from stocktradebot.data.models import CorporateActionRecord, DailyBarRecord, Pro
 from stocktradebot.data.service import backfill_market_data, market_data_status
 from stocktradebot.storage import (
     CorporateActionObservation,
+    UniverseSnapshot,
     create_db_engine,
     initialize_database,
 )
@@ -167,3 +168,149 @@ def test_backfill_market_data_persists_payloads_and_universe(isolated_app_home: 
 
     assert len(actions) == 1
     assert actions[0].action_type == "dividend"
+
+
+def test_backfill_market_data_full_history_persists_historical_snapshots(
+    isolated_app_home: Path,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    config.universe.stock_candidates = ["AAPL", "MSFT"]
+    config.universe.curated_etfs = ["SPY"]
+    config.universe.min_history_days = 1
+    config.universe.liquidity_lookback_days = 1
+    config.universe.max_stocks = 2
+    config.universe.monthly_refresh_day = 1
+    config.save()
+    initialize_database(config)
+
+    provider = FakeProvider(
+        "stooq",
+        bars_by_symbol={
+            "AAPL": (
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="AAPL",
+                    trade_date=date(2026, 1, 2),
+                    open=99.0,
+                    high=101.0,
+                    low=98.0,
+                    close=100.0,
+                    volume=1_000_000,
+                ),
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="AAPL",
+                    trade_date=date(2026, 2, 2),
+                    open=100.0,
+                    high=102.0,
+                    low=99.0,
+                    close=101.0,
+                    volume=1_100_000,
+                ),
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="AAPL",
+                    trade_date=date(2026, 3, 2),
+                    open=101.0,
+                    high=103.0,
+                    low=100.0,
+                    close=102.0,
+                    volume=1_200_000,
+                ),
+            ),
+            "MSFT": (
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="MSFT",
+                    trade_date=date(2026, 1, 2),
+                    open=199.0,
+                    high=201.0,
+                    low=198.0,
+                    close=200.0,
+                    volume=900_000,
+                ),
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="MSFT",
+                    trade_date=date(2026, 2, 2),
+                    open=200.0,
+                    high=202.0,
+                    low=199.0,
+                    close=201.0,
+                    volume=950_000,
+                ),
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="MSFT",
+                    trade_date=date(2026, 3, 2),
+                    open=201.0,
+                    high=203.0,
+                    low=200.0,
+                    close=202.0,
+                    volume=975_000,
+                ),
+            ),
+            "SPY": (
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="SPY",
+                    trade_date=date(2026, 1, 2),
+                    open=499.0,
+                    high=501.0,
+                    low=498.0,
+                    close=500.0,
+                    volume=5_000_000,
+                ),
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="SPY",
+                    trade_date=date(2026, 2, 2),
+                    open=500.0,
+                    high=503.0,
+                    low=499.0,
+                    close=502.0,
+                    volume=5_100_000,
+                ),
+                DailyBarRecord(
+                    provider="stooq",
+                    symbol="SPY",
+                    trade_date=date(2026, 3, 2),
+                    open=502.0,
+                    high=504.0,
+                    low=501.0,
+                    close=503.0,
+                    volume=5_200_000,
+                ),
+            ),
+        },
+    )
+
+    summary = backfill_market_data(
+        config,
+        as_of_date=date(2026, 3, 2),
+        lookback_days=30,
+        full_history=True,
+        historical_snapshots=True,
+        symbols=["AAPL", "MSFT", "SPY"],
+        providers=[provider],
+        primary_provider="stooq",
+    )
+
+    assert summary.full_history is True
+    assert summary.historical_snapshots is True
+    assert summary.historical_snapshot_count == 3
+
+    engine = create_db_engine(config)
+    try:
+        with Session(engine) as session:
+            snapshots = session.scalars(
+                select(UniverseSnapshot).order_by(UniverseSnapshot.effective_date.asc())
+            ).all()
+    finally:
+        engine.dispose()
+
+    assert [snapshot.effective_date for snapshot in snapshots] == [
+        date(2026, 1, 2),
+        date(2026, 2, 2),
+        date(2026, 3, 2),
+    ]

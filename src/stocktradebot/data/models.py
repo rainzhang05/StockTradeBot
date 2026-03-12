@@ -211,6 +211,9 @@ class BackfillSummary:
     domain: str = "daily"
     frequency: str | None = None
     quality_report_path: str | None = None
+    full_history: bool = False
+    historical_snapshots: bool = False
+    historical_snapshot_count: int = 0
 
 
 @dataclass(slots=True, frozen=True)

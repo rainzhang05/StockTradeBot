@@ -277,6 +277,8 @@ def create_app(
     def run_market_data_backfill(
         as_of: str | None = None,
         lookback_days: int = 180,
+        full_history: bool = False,
+        historical_snapshots: bool = False,
         symbol: list[str] | None = None,
     ) -> dict[str, object]:
         config = current_config()
@@ -289,6 +291,8 @@ def create_app(
                 config,
                 as_of_date=parsed_date,
                 lookback_days=lookback_days,
+                full_history=full_history,
+                historical_snapshots=historical_snapshots,
                 symbols=symbol,
             )
         except RuntimeError as exc:

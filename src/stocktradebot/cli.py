@@ -50,6 +50,18 @@ AsOfOption = Annotated[
 ]
 LookbackDaysOption = Annotated[int, typer.Option(min=30)]
 IntradayLookbackDaysOption = Annotated[int, typer.Option(min=1)]
+FullHistoryOption = Annotated[
+    bool,
+    typer.Option(
+        help="Fetch the provider's full daily history instead of deriving a short lookback window."
+    ),
+]
+HistoricalSnapshotsOption = Annotated[
+    bool,
+    typer.Option(
+        help="Persist monthly historical universe snapshots across the fetched daily history."
+    ),
+]
 SymbolsOption = Annotated[
     list[str] | None,
     typer.Option("--symbol", "-s", help="Repeat to backfill specific symbols."),
@@ -214,6 +226,8 @@ def backfill(
     app_home: AppHomeOption = None,
     as_of: AsOfOption = None,
     lookback_days: LookbackDaysOption = 120,
+    full_history: FullHistoryOption = False,
+    historical_snapshots: HistoricalSnapshotsOption = False,
     symbol: SymbolsOption = None,
     primary_provider: ProviderNameOption = None,
     secondary_provider: ProviderNameOption = None,
@@ -224,6 +238,8 @@ def backfill(
         config,
         as_of_date=_parse_as_of_date(as_of),
         lookback_days=lookback_days,
+        full_history=full_history,
+        historical_snapshots=historical_snapshots,
         symbols=symbol,
         primary_provider=primary_provider,
         secondary_provider=secondary_provider,

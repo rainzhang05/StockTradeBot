@@ -56,7 +56,10 @@ def test_backfill_command_runs_market_data_flow(
     isolated_app_home: Path,
     monkeypatch,
 ) -> None:
+    called_kwargs: dict[str, object] = {}
+
     def fake_backfill_market_data(*args, **kwargs) -> BackfillSummary:
+        called_kwargs.update(kwargs)
         return BackfillSummary(
             run_id=7,
             as_of_date=date(2026, 3, 6),
@@ -76,11 +79,24 @@ def test_backfill_command_runs_market_data_flow(
 
     monkeypatch.setattr("stocktradebot.cli.backfill_market_data", fake_backfill_market_data)
 
-    result = runner.invoke(app, ["backfill", "--symbol", "AAPL", "--as-of", "2026-03-06"])
+    result = runner.invoke(
+        app,
+        [
+            "backfill",
+            "--symbol",
+            "AAPL",
+            "--as-of",
+            "2026-03-06",
+            "--full-history",
+            "--historical-snapshots",
+        ],
+    )
 
     assert result.exit_code == 0
     assert '"run_id": 7' in result.stdout
     assert '"canonical_count": 2' in result.stdout
+    assert called_kwargs["full_history"] is True
+    assert called_kwargs["historical_snapshots"] is True
 
 
 def test_train_command_runs_training_flow(
