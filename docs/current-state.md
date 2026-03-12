@@ -84,7 +84,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - added full-history daily backfill support plus monthly historical universe snapshots and explicit as-of-date snapshot persistence for long-range research windows
 - updated training so the persisted research backtest is now the full walk-forward validation window instead of only the latest holdout segment
 - hydrated the direct `~/.stocktradebot` runtime with a 300-stock plus 26-ETF full-history daily backfill from `1990-01-02` through `2026-03-11`, using Stooq primary data plus Yahoo fallback where needed
-- produced a live runtime with `326` distinct symbols, `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `9,114` distinct trade dates, and `436` historical universe snapshots
+- produced a live runtime with `326` distinct symbols, `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `9,114` distinct trade dates, and `1,311` historical universe snapshots
 - ran a full-history staged shortlist on an isolated copy of the hydrated 300-name runtime and wrote the report to `artifacts/reports/research-shortlist-300-full-history-20260312T092500951450Z.json`
 - activated the best measured live research config and retrained the live app-home: `linear-correlation-v1`, `daily-alpha-v2`, `forward-return-v1`, `ranking_label_5d`, `research` quality scope, `3`-day rebalance, `20` target positions, `0.10` turnover penalty, `risk_off_gross_exposure=0.35`, and `defensive_etf_symbol=null`
 - added a separate four-slot strategy-profile catalog distinct from runtime execution modes: `conservative`, `balanced`, `growth`, and `aggressive`
@@ -148,14 +148,14 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Verification Status
 
-- documentation consistency review: completed manually
-- file/path validation for referenced docs: completed for `docs/README.md` links
-- backend checks: `make backend-quality` and `make backend-tests` passed locally after the strategy-profile readiness and repair workflow addition
-- coverage check: passed locally at `80.91%`
+- documentation consistency review: completed manually against the current docs, CLI surface, config defaults, strategy-profile catalog, and live app-home runtime state
+- file/path validation for referenced docs: all relative Markdown links under `docs/` resolved locally
+- backend checks: `make backend-quality` and `make backend-tests` passed locally through `make check` during merge preparation
+- coverage check: passed locally at `81.03%`
 - frontend checks: `make frontend-check` passed locally
 - frontend browser E2E: `make frontend-e2e` passed locally after updating the operator mock workspace for the new strategy-profile UI
-- package build: `make package-check` passed locally
-- repository verification: `make check` passed locally after the Phase 9 intraday implementation
+- package build: `make package-check` passed locally during merge preparation and again as part of `make check`
+- repository verification: `make check` passed locally during merge preparation with `85` tests passing
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, verify `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`, and confirm the installed runtime serves the bundled UI
 - browser screenshot review: refreshed locally via the existing Playwright E2E lane at `output/playwright/clean-operator-ui.png`
 - documentation path review: confirmed the updated root README links resolve to `docs/README.md`, `docs/commands.md`, and `docs/assets/stocktradebot-ui-sample.png`
@@ -164,11 +164,12 @@ This file describes the repository as it exists now. Update it at the end of eve
 - backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
 - Phase 9 integration verification: full pytest suite passed locally, including daily and intraday API flows, intraday dataset and validation paths, paper execution, live-manual preparation and approval, config mutation, mode transitions, and browser-driven operator workflows
 - daily research recovery verification: local profit-study report `artifacts/reports/research-optimization-current-local.json` completed from isolated app-home copies; the short holdout winner returned `18.32%` with `gradient-boosting-v1`, `3`-day rebalances, `15` target positions, and `0.10` turnover penalty
-- full-history daily verification: the direct `~/.stocktradebot` runtime now contains `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `326` distinct symbols, `9,114` distinct trade dates, and `436` historical universe snapshots after the rebuilt `stocktradebot backfill --full-history --historical-snapshots`
+- full-history daily verification: the direct `~/.stocktradebot` runtime now contains `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `326` distinct symbols, `9,114` distinct trade dates, and `1,311` historical universe snapshots after the rebuilt `stocktradebot backfill --full-history --historical-snapshots`
 - 300-name staged shortlist verification: `artifacts/reports/research-shortlist-300-full-history-20260312T092500951450Z.json` completed from an isolated copy of the rebuilt app-home; the activated winner was `linear-correlation-v1` with `daily-alpha-v2`, `forward-return-v1`, `3`-day rebalances, `20` target positions, and `0.10` turnover penalty, beating the rebuilt live baseline on both full walk-forward excess return and recent holdout excess return
 - live retraining verification: the activated live model `linear-correlation-v1-20260312T093124127851Z` completed with walk-forward total return `221.98%`, walk-forward excess return `200.87%`, holdout total return `32.12%`, and holdout excess return `29.89%`
 
 ## Last Updated Because
 
+- 2026-03-12: completed a repository-wide documentation consistency review against the live code and runtime, refreshed stale full-history snapshot counts, reran `make check`, and prepared the branch for merge
 - 2026-03-12: added four-slot strategy-profile readiness and repair workflows, classified the current winning strategy as the `growth` profile, exposed the new API and Overview UI surfaces, reran backend plus frontend verification, and refreshed the docs to match the new operator workflow
 - 2026-03-12: added a repository-wide `.DS_Store` ignore rule and refreshed current state for the repo-hygiene update
