@@ -212,3 +212,4 @@ __marimo__/
 frontend/dist/
 frontend/node_modules/
 output/playwright/
+artifacts/
