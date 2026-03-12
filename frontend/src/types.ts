@@ -387,6 +387,78 @@ export interface ModelStatus {
   } | null;
 }
 
+export interface StrategyModeResourceSnapshot {
+  status: string;
+  summary: string;
+  snapshot?: {
+    id: number;
+    as_of_date: string;
+    quality_scope: string;
+    created_at: string | null;
+    row_count: number;
+  } | null;
+  entry?: {
+    id: number;
+    version: string;
+    family: string;
+    quality_scope: string;
+    created_at: string | null;
+    as_of_date: string;
+  } | null;
+  run?: {
+    id: number;
+    status: string;
+    quality_scope: string;
+    created_at: string | null;
+    as_of_date: string;
+    start_date?: string;
+    end_date?: string;
+  } | null;
+}
+
+export interface StrategyModeDefinition {
+  key: string;
+  label: string;
+  level: number;
+  defined: boolean;
+  is_active: boolean;
+  classification: string;
+  description: string;
+  overall_status: string;
+  status_summary: string;
+  definition: Record<string, unknown> | null;
+  resources: {
+    dataset: StrategyModeResourceSnapshot;
+    model: StrategyModeResourceSnapshot;
+    validation: StrategyModeResourceSnapshot;
+    backtest: StrategyModeResourceSnapshot;
+  };
+}
+
+export interface StrategyModeWorkspace {
+  catalog_version: string;
+  active_mode_key: string | null;
+  defined_mode_count: number;
+  empty_mode_count: number;
+  shared_resources: {
+    as_of_date: string;
+    data_status: string;
+    data_summary: string;
+    latest_trade_date: string | null;
+    latest_verified_trade_date: string | null;
+    distinct_trade_dates: number;
+    universe_snapshot_count: number;
+    latest_universe_effective_date: string | null;
+    stock_universe_size: number;
+    etf_universe_size: number;
+    fundamentals_status: string;
+    fundamentals_summary: string;
+    full_history_ready: boolean;
+    repair_recommendation: string;
+  };
+  modes: StrategyModeDefinition[];
+}
+
 export interface WorkspaceSnapshot {
   health: HealthSnapshot;
   setup: SetupSnapshot;
@@ -403,6 +475,7 @@ export interface WorkspaceSnapshot {
   market_data: MarketDataStatus;
   datasets: DatasetStatus;
   models: ModelStatus;
+  strategy_modes: StrategyModeWorkspace;
   risk: {
     mode_state: ModeState | null;
     active_freeze: FreezeSnapshot | null;

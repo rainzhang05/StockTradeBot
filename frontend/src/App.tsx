@@ -6,6 +6,7 @@ import {
   backfillMarketData,
   backtestModel,
   fetchWorkspace,
+  repairStrategyModeResources,
   runLive,
   runPaper,
   runSimulation,
@@ -22,6 +23,7 @@ import type {
   OperationalLogEvent,
   OrderSnapshot,
   PortfolioPosition,
+  StrategyModeDefinition,
   WorkspaceSnapshot
 } from "./types";
 
@@ -186,6 +188,22 @@ function valueTone(value: number | null | undefined): Tone {
 
 function statusTone(ok: boolean): Tone {
   return ok ? "success" : "attention";
+}
+
+function strategyTone(status: string | null | undefined): Tone {
+  if (!status) {
+    return "muted";
+  }
+  if (status === "ready") {
+    return "success";
+  }
+  if (status === "empty") {
+    return "muted";
+  }
+  if (status === "repair-needed" || status === "stale" || status === "partial") {
+    return "attention";
+  }
+  return "danger";
 }
 
 function modeTone(mode: string | null | undefined): Tone {
@@ -434,6 +452,15 @@ function statusSummaryRows(workspace: WorkspaceSnapshot | null): Array<{ label: 
   });
 }
 
+function strategyProfileLabel(workspace: WorkspaceSnapshot | null): string {
+  const activeKey = workspace?.strategy_modes.active_mode_key;
+  if (!activeKey) {
+    return "Custom profile";
+  }
+  const activeMode = workspace?.strategy_modes.modes.find((item) => item.key === activeKey);
+  return activeMode?.label ?? toTitleCase(activeKey);
+}
+
 function Badge(props: { label: string; tone?: Tone }): JSX.Element {
   return <span className={`badge badge--${props.tone ?? "default"}`}>{props.label}</span>;
 }
@@ -585,6 +612,56 @@ function ActivityFeed(props: { items: ActivityItem[] }): JSX.Element {
   );
 }
 
+function StrategyModeCard(props: { mode: StrategyModeDefinition }): JSX.Element {
+  const tone = strategyTone(props.mode.overall_status);
+  return (
+    <article
+      className={
+        props.mode.is_active
+          ? `strategy-card strategy-card--${tone} strategy-card--active`
+          : `strategy-card strategy-card--${tone}`
+      }
+    >
+      <div className="strategy-card__header">
+        <div>
+          <p className="eyebrow">Level {props.mode.level}</p>
+          <h3>{props.mode.label}</h3>
+        </div>
+        <div className="strategy-card__badges">
+          <Badge label={props.mode.defined ? "Defined" : "Empty"} tone={props.mode.defined ? "default" : "muted"} />
+          <Badge label={toTitleCase(props.mode.overall_status)} tone={tone} />
+          {props.mode.is_active ? <Badge label="Active profile" tone="success" /> : null}
+        </div>
+      </div>
+      <p className="strategy-card__description">{props.mode.description}</p>
+      <p className="strategy-card__summary">{props.mode.status_summary}</p>
+      <div className="strategy-card__resource-list">
+        <div className="strategy-card__resource-item">
+          <span>Dataset</span>
+          <Badge
+            label={toTitleCase(props.mode.resources.dataset.status)}
+            tone={strategyTone(props.mode.resources.dataset.status)}
+          />
+        </div>
+        <div className="strategy-card__resource-item">
+          <span>Model</span>
+          <Badge
+            label={toTitleCase(props.mode.resources.model.status)}
+            tone={strategyTone(props.mode.resources.model.status)}
+          />
+        </div>
+        <div className="strategy-card__resource-item">
+          <span>Backtest</span>
+          <Badge
+            label={toTitleCase(props.mode.resources.backtest.status)}
+            tone={strategyTone(props.mode.resources.backtest.status)}
+          />
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function SetupStepList(props: { items: Array<{ label: string; ok: boolean }> }): JSX.Element {
   return (
     <div className="setup-steps">
@@ -643,6 +720,9 @@ function App(): JSX.Element {
   const latestCash = workspace?.portfolio.latest_target_snapshot?.cash_balance ?? null;
   const trackedSymbols = stockRows.length;
   const highlightedStocks = stockRows.slice(0, 6);
+  const strategyModes = workspace?.strategy_modes ?? null;
+  const strategyDataTone = strategyTone(strategyModes?.shared_resources.data_status);
+  const strategyDataSummary = strategyModes?.shared_resources.data_summary ?? "Checking strategy resources.";
 
   async function loadWorkspace(background = false): Promise<void> {
     if (background) {
@@ -920,6 +1000,7 @@ function App(): JSX.Element {
                 <Badge label={workspace?.risk.active_freeze ? "Freeze active" : "No freeze"} tone={workspace?.risk.active_freeze ? "danger" : "success"} />
                 <Badge label={`${pendingApprovals.length} pending approval${pendingApprovals.length === 1 ? "" : "s"}`} tone={pendingApprovals.length > 0 ? "attention" : "muted"} />
                 <Badge label={`${trackedSymbols} tracked stocks`} tone="muted" />
+                <Badge label={strategyProfileLabel(workspace)} tone="default" />
               </div>
             </div>
             <div className="hero__stats">
@@ -1062,6 +1143,51 @@ function App(): JSX.Element {
                   )
                 }
               />
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Strategy modes"
+            description="Four strategy-risk slots are planned. The current winner is classified as Growth; the other three slots stay empty until they are designed."
+            actions={
+              <>
+                <Badge
+                  label={`${strategyModes?.defined_mode_count ?? 0} defined / ${strategyModes?.empty_mode_count ?? 0} empty`}
+                  tone="default"
+                />
+                <Badge
+                  label={toTitleCase(strategyModes?.shared_resources.data_status ?? "loading")}
+                  tone={strategyDataTone}
+                />
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={activeAction === "repair-strategy-resources"}
+                  onClick={() =>
+                    void runAction(
+                      "repair-strategy-resources",
+                      () => repairStrategyModeResources(),
+                      "Strategy resources repaired.",
+                    )
+                  }
+                >
+                  {activeAction === "repair-strategy-resources" ? "Repairing..." : "Repair resources"}
+                </button>
+              </>
+            }
+          >
+            <div className="strategy-summary">
+              <p>{strategyDataSummary}</p>
+              <p>
+                Latest trade date {strategyModes?.shared_resources.latest_trade_date ?? "n/a"} ·{" "}
+                {strategyModes?.shared_resources.stock_universe_size ?? 0} stocks ·{" "}
+                {strategyModes?.shared_resources.universe_snapshot_count ?? 0} universe snapshots
+              </p>
+            </div>
+            <div className="strategy-grid">
+              {(strategyModes?.modes ?? []).map((mode) => (
+                <StrategyModeCard key={mode.key} mode={mode} />
+              ))}
             </div>
           </SectionCard>
 

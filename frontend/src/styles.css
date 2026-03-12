@@ -470,14 +470,16 @@ label > span,
 }
 
 .mode-grid,
-.action-grid {
+.action-grid,
+.strategy-grid {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .mode-card,
-.action-tile {
+.action-tile,
+.strategy-card {
   width: 100%;
   min-height: 148px;
   padding: 18px 18px 20px;
@@ -495,6 +497,12 @@ label > span,
   gap: 10px;
 }
 
+.strategy-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
 .mode-card--active {
   border-color: rgba(17, 17, 17, 0.24);
   box-shadow:
@@ -502,11 +510,23 @@ label > span,
     inset 0 0 0 1px rgba(17, 17, 17, 0.08);
 }
 
+.strategy-card--active {
+  border-color: rgba(17, 17, 17, 0.24);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 0 0 1px rgba(17, 17, 17, 0.08);
+}
+
 .mode-card__label,
-.action-tile__title {
+.action-tile__title,
+.strategy-card h3 {
   font-size: 1.06rem;
   font-weight: 650;
   color: var(--text);
+}
+
+.strategy-card h3 {
+  margin: 6px 0 0;
 }
 
 .mode-card__meta {
@@ -535,6 +555,59 @@ label > span,
 .action-tile--muted {
   background:
     linear-gradient(180deg, rgba(17, 17, 17, 0.035), rgba(255, 255, 255, 0.98));
+}
+
+.strategy-card--attention {
+  background:
+    linear-gradient(180deg, rgba(165, 102, 0, 0.05), rgba(255, 255, 255, 0.98));
+  border-color: var(--attention-line);
+}
+
+.strategy-card--danger {
+  background:
+    linear-gradient(180deg, rgba(180, 35, 24, 0.05), rgba(255, 255, 255, 0.98));
+  border-color: var(--danger-line);
+}
+
+.strategy-card--success {
+  background:
+    linear-gradient(180deg, rgba(13, 113, 61, 0.05), rgba(255, 255, 255, 0.98));
+  border-color: var(--success-line);
+}
+
+.strategy-card__header,
+.strategy-card__resource-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.strategy-card__badges,
+.strategy-card__resource-list {
+  display: grid;
+  gap: 10px;
+}
+
+.strategy-card__description,
+.strategy-card__summary,
+.strategy-summary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.58;
+}
+
+.strategy-card__resource-item {
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.strategy-summary {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
@@ -843,7 +916,8 @@ label {
   .hero__stats,
   .stats-grid,
   .mode-grid,
-  .action-grid {
+  .action-grid,
+  .strategy-grid {
     grid-template-columns: 1fr;
   }
 

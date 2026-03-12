@@ -61,6 +61,13 @@ export function fetchWorkspace(): Promise<WorkspaceSnapshot> {
   return requestJson<WorkspaceSnapshot>("/api/v1/operator/workspace");
 }
 
+export function repairStrategyModeResources(
+  asOf?: string,
+): Promise<{ repair: Record<string, unknown> }> {
+  const url = appendQuery("/api/v1/operator/strategy-modes/repair", { as_of: asOf });
+  return requestJson(url, { method: "POST" });
+}
+
 export function updateConfig(patch: Record<string, unknown>): Promise<{ config: Record<string, unknown> }> {
   return requestJson<{ config: Record<string, unknown> }>("/api/v1/config", {
     method: "PUT",

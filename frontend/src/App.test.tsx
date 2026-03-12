@@ -248,6 +248,160 @@ function createWorkspace(): WorkspaceSnapshot {
         completed_at: "2026-04-15T15:21:00Z"
       }
     },
+    strategy_modes: {
+      catalog_version: "strategy-modes-v1",
+      active_mode_key: "growth",
+      defined_mode_count: 1,
+      empty_mode_count: 3,
+      shared_resources: {
+        as_of_date: "2026-04-15",
+        data_status: "ready",
+        data_summary: "Daily data is current through 2026-04-15 with a 300-stock universe and multi-year history.",
+        latest_trade_date: "2026-04-15",
+        latest_verified_trade_date: "2026-04-15",
+        distinct_trade_dates: 1200,
+        universe_snapshot_count: 36,
+        latest_universe_effective_date: "2026-04-15",
+        stock_universe_size: 300,
+        etf_universe_size: 26,
+        fundamentals_status: "ready",
+        fundamentals_summary: "48 SEC-derived observations are available.",
+        full_history_ready: true,
+        repair_recommendation: "refresh-defined-modes"
+      },
+      modes: [
+        {
+          key: "conservative",
+          label: "Conservative",
+          level: 1,
+          defined: false,
+          is_active: false,
+          classification: "planned",
+          description: "Reserved for a future lower-volatility strategy profile.",
+          overall_status: "empty",
+          status_summary: "Strategy profile is not defined yet.",
+          definition: null,
+          resources: {
+            dataset: { status: "missing", summary: "No strategy definition is available yet.", snapshot: null },
+            model: { status: "missing", summary: "No strategy definition is available yet.", entry: null },
+            validation: { status: "missing", summary: "No strategy definition is available yet.", run: null },
+            backtest: { status: "missing", summary: "No strategy definition is available yet.", run: null }
+          }
+        },
+        {
+          key: "balanced",
+          label: "Balanced",
+          level: 2,
+          defined: false,
+          is_active: false,
+          classification: "planned",
+          description: "Reserved for a future middle-risk strategy profile.",
+          overall_status: "empty",
+          status_summary: "Strategy profile is not defined yet.",
+          definition: null,
+          resources: {
+            dataset: { status: "missing", summary: "No strategy definition is available yet.", snapshot: null },
+            model: { status: "missing", summary: "No strategy definition is available yet.", entry: null },
+            validation: { status: "missing", summary: "No strategy definition is available yet.", run: null },
+            backtest: { status: "missing", summary: "No strategy definition is available yet.", run: null }
+          }
+        },
+        {
+          key: "growth",
+          label: "Growth",
+          level: 3,
+          defined: true,
+          is_active: true,
+          classification: "current-winner",
+          description: "Current winning strategy profile: diversified long-only equities with turnover control, sector caps, and risk-off throttling. This sits above balanced but below a future fully aggressive profile.",
+          overall_status: "ready",
+          status_summary: "Data, dataset, model, and backtest resources are ready for this strategy mode.",
+          definition: {
+            model_training: {
+              quality_scope: "research",
+              model_family: "linear-correlation-v1",
+              feature_set_version: "daily-alpha-v2",
+              label_version: "forward-return-v1",
+              target_label_name: "ranking_label_5d",
+              rebalance_interval_days: 3
+            },
+            portfolio: {
+              risk_on_target_positions: 20,
+              turnover_penalty: 0.1,
+              risk_off_gross_exposure: 0.35,
+              defensive_etf_symbol: null
+            }
+          },
+          resources: {
+            dataset: {
+              status: "ready",
+              summary: "Dataset is ready.",
+              snapshot: {
+                id: 4,
+                as_of_date: "2026-04-15",
+                quality_scope: "research",
+                created_at: "2026-04-15T15:10:00Z",
+                row_count: 280
+              }
+            },
+            model: {
+              status: "ready",
+              summary: "Model is ready.",
+              entry: {
+                id: 7,
+                version: "linear-correlation-v1-test",
+                family: "linear-correlation-v1",
+                quality_scope: "research",
+                created_at: "2026-04-15T15:16:00Z",
+                as_of_date: "2026-04-15"
+              }
+            },
+            validation: {
+              status: "ready",
+              summary: "Validation run is available.",
+              run: {
+                id: 9,
+                status: "completed",
+                quality_scope: "research",
+                created_at: "2026-04-15T15:18:00Z",
+                as_of_date: "2026-04-15"
+              }
+            },
+            backtest: {
+              status: "ready",
+              summary: "Backtest is ready.",
+              run: {
+                id: 10,
+                status: "completed",
+                quality_scope: "research",
+                created_at: "2026-04-15T15:21:00Z",
+                as_of_date: "2026-04-15",
+                start_date: "2026-01-01",
+                end_date: "2026-04-15"
+              }
+            }
+          }
+        },
+        {
+          key: "aggressive",
+          label: "Aggressive",
+          level: 4,
+          defined: false,
+          is_active: false,
+          classification: "planned",
+          description: "Reserved for a future higher-risk, higher-variance strategy profile.",
+          overall_status: "empty",
+          status_summary: "Strategy profile is not defined yet.",
+          definition: null,
+          resources: {
+            dataset: { status: "missing", summary: "No strategy definition is available yet.", snapshot: null },
+            model: { status: "missing", summary: "No strategy definition is available yet.", entry: null },
+            validation: { status: "missing", summary: "No strategy definition is available yet.", run: null },
+            backtest: { status: "missing", summary: "No strategy definition is available yet.", run: null }
+          }
+        }
+      ]
+    },
     risk: {
       mode_state: {
         current_mode: "simulation",
@@ -438,6 +592,13 @@ describe("App", () => {
         });
       }
 
+      if (url.includes("/api/v1/operator/strategy-modes/repair")) {
+        return new Response(JSON.stringify({ repair: { status: "completed" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       return new Response(JSON.stringify({ detail: `Unhandled route ${url}` }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
@@ -450,9 +611,25 @@ describe("App", () => {
 
     expect(await screen.findByText("Backtest profit")).toBeInTheDocument();
     expect(screen.getByText("Profit after latest run")).toBeInTheDocument();
+    expect(screen.getByText("Strategy modes")).toBeInTheDocument();
+    expect(screen.getAllByText("Growth").length).toBeGreaterThan(0);
     expect(screen.getByText("Stocks that need attention")).toBeInTheDocument();
     expect(screen.getByText("AAPL")).toBeInTheDocument();
     expect(screen.getByText("Awaiting approval")).toBeInTheDocument();
+  });
+
+  it("repairs strategy resources from the overview", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Repair resources" }));
+
+    await screen.findByText("Strategy resources repaired.");
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/operator/strategy-modes/repair"),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
   });
 
   it("shows recent system activity on the activity screen", async () => {
