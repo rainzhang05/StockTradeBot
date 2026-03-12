@@ -53,6 +53,7 @@ Universe construction rules:
 - rank candidates using trailing liquidity and price filters
 - persist each snapshot with an effective date
 - use historical snapshots in research to prevent look-ahead bias
+- when a full-history daily backfill is requested, persist the monthly snapshot chain plus the explicit as-of-date snapshot so current research runs do not get anchored to an earlier monthly refresh date
 
 ## 4. Provider Adapter Model
 
@@ -255,4 +256,5 @@ Current implementation status:
 - intraday provider ingestion, canonicalization, dataset generation, and validation exist for `15min` and `1h`
 - intraday quality reports are persisted per backfill run and feed promotion-readiness checks for intraday validation
 - intraday research can bootstrap from the earliest available universe snapshot when a dense historical sequence of universe snapshots is not yet present
+- daily full-history backfills can now hydrate multi-decade Stooq history and persist monthly historical universe snapshots for research
 - daily data remains the production baseline for model promotion and execution while intraday research matures

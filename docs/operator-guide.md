@@ -35,6 +35,7 @@ Complete the `Setup` view in this order:
 Readiness note:
 
 - a Stooq-only runtime may show daily data as `research-capable` but `promotion-blocked`; that means daily research and backtests can run, but candidate promotion and live eligibility still require verified bars
+- when you need a multi-year daily research baseline, run `stocktradebot backfill --full-history --historical-snapshots`; that hydrates the provider's full daily range and persists monthly universe snapshots plus the current as-of snapshot
 
 ## Daily Operator Workflow
 

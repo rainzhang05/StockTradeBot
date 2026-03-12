@@ -101,9 +101,9 @@ The following commands are part of the target stable interface:
 - `stocktradebot intraday-validate`
   - runs intraday walk-forward validation and emits an intraday validation artifact
 - `stocktradebot train`
-  - runs model training, validation, and registry publication for a specified dataset/feature version and quality scope
+  - runs model training, validation, registry publication, and a persisted walk-forward validation backtest for a specified dataset/feature version and quality scope
 - `stocktradebot backtest`
-  - runs event-driven backtests through the shared portfolio-construction path and emits reproducible reports
+  - runs event-driven backtests through the shared portfolio-construction path and emits reproducible reports for the selected trained model
 - `stocktradebot simulate`
   - runs the simulation adapter, persists target portfolios, order intents, fills, and risk results
 - `stocktradebot paper`

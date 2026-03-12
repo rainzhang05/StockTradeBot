@@ -163,7 +163,7 @@ Autonomous mode must be harder to enter than manual mode.
 
 Before a model becomes eligible for `live-manual`:
 
-- pass walk-forward backtests on the available history
+- pass walk-forward backtests on the available history; the persisted training-time backtest must cover the full configured research window rather than only the latest holdout slice
 - beat SPY net of estimated trading costs on the most recent out-of-sample segment
 - show acceptable regime-split behavior, including survivability in poor markets
 - complete at least `30` market days in paper mode without critical safety incidents

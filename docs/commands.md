@@ -58,6 +58,8 @@ Common options:
 
 - `--as-of YYYY-MM-DD`
 - `--lookback-days INTEGER`
+- `--full-history`
+- `--historical-snapshots`
 - `--symbol SYMBOL` and repeat it for multiple symbols
 - `--primary-provider NAME`
 - `--secondary-provider NAME`
@@ -67,6 +69,8 @@ Example:
 ```bash
 stocktradebot backfill --symbol AAPL --symbol MSFT --lookback-days 180
 ```
+
+Use `--full-history --historical-snapshots` when you want a long-range daily research baseline. `--full-history` asks the current daily provider for its full available history, and `--historical-snapshots` persists monthly universe snapshots plus the explicit as-of-date snapshot so multi-year research avoids falling back to a single late universe definition.
 
 ### `stocktradebot intraday-backfill`
 
