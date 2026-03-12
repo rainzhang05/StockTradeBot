@@ -4,9 +4,9 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Repository Snapshot
 
-- Date: 2026-03-10
-- Branch: `main`
-- Repository state: Phase 9 intraday research expansion implemented with simplified operator UI and hardened packaged CLI bootstrap
+- Date: 2026-03-12
+- Branch: `codex/daily-research-profit-opt`
+- Repository state: Phase 9 intraday research expansion plus daily research recovery and profit optimization implemented
 - Application code: package, CLI, API, runtime, storage, operator frontend, packaged frontend asset serving, structured operational logging, daily and intraday market-data pipelines, fundamentals ingestion, daily and intraday dataset generation, model training, daily and intraday walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
 - CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, and package verification
 - Tests: backend and frontend verification suites created through Phase 9
@@ -69,6 +69,14 @@ This file describes the repository as it exists now. Update it at the end of eve
 - hardened runtime migration lookup so installed packages prefer bundled Alembic assets, fall back to repository assets only when appropriate, and fail with a clear reinstall message when both are missing
 - updated package smoke verification so installed builds must pass `stocktradebot status` and `stocktradebot --check-only --no-browser` in addition to the existing `init`, `doctor`, and bundled-frontend checks
 - corrected the persisted app-state schema marker written during database bootstrap from `phase6` to `phase9`
+- added daily `quality_scope` support so `research` datasets, models, validations, and backtests can run on provisional daily bars while `promotion` remains verified-only
+- added stale backfill-run interruption handling plus daily readiness reporting that distinguishes `research-capable` from `promotion-blocked`
+- added bundled stock sector mappings, consistent curated ETF resolution, and a concrete default defensive ETF symbol for risk-off handling
+- added `gradient-boosting-v1` and `rank-ensemble-v1` daily model families on top of the existing linear baseline
+- aligned daily backtests with the execution path so research uses the same target-portfolio construction, regime handling, turnover logic, defensive ETF behavior, slippage, commissions, and partial-fill assumptions as simulation
+- added daily rebalance-interval support for `1`, `3`, and `5` trading days, with research defaulting to `5`
+- added the isolated daily research optimizer helper at `scripts/research_optimize.py` and a local profit-study report workflow under `artifacts/reports/`
+- ran a local profit study on isolated copies of the current app home and wrote the combined current-defaults report to `artifacts/reports/research-optimization-current-local.json`
 
 ## Subsystem Status Matrix
 
@@ -80,7 +88,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Database/storage | Complete for Phase 9 | SQLite bootstrap, Alembic migrations, daily and intraday market-data tables, dataset tables, model registry tables, mode state, freeze state, simulation runs, broker snapshots, broker orders, approvals, transition audit, and raw/artifact storage exist; installed runtimes now prefer packaged Alembic assets during bootstrap |
 | Data ingestion | Complete for Phase 9 | Provider adapters, raw payload persistence, canonical daily bars, canonical intraday bars, incidents, universe snapshots, SEC fundamentals, and intraday quality reporting are implemented |
 | Features/fundamentals | Complete for Phase 9 | Availability-aware daily and intraday feature generation, labels, dataset lineage, and artifact export are implemented |
-| Models/backtesting | Complete for Phase 9 | Deterministic baseline training, daily and intraday walk-forward validation, event-driven backtests, persisted reports, and model registry entries are implemented |
+| Models/backtesting | Complete for Phase 9 plus daily research recovery | Daily research can now train and backtest in `research` scope on provisional bars, daily backtests share the execution-path portfolio constructor, gradient-boosting and rank-ensemble families are implemented, and model/validation/backtest lineage persists `quality_scope` |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
 | Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, and packaged frontend serving remain implemented while the default surface hides raw backend payloads, uses a more polished production-style visual system, and focuses on non-technical operator decisions |
@@ -98,6 +106,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - repository-wide test coverage target is `>= 80%` once code and tests exist
 - verified canonical bars still require a corroborating secondary provider; the default Stooq-only setup yields provisional bars until a secondary source is enabled
 - dataset builds require a prior backfill because the feature pipeline depends on persisted canonical bars and universe snapshots
+- the direct local `~/.stocktradebot` runtime currently has only `248` distinct research-ready daily trade dates versus `340` required for the configured walk-forward training window, so a full daily profit study still depends on isolated copies plus additional Stooq backfill history
 - intraday research currently depends on free-source intraday coverage quality and can fall back to the earliest available universe snapshot when older historical snapshot coverage is missing
 - simulation mode may use research-only models under the current default config
 - paper mode requires a configured IBKR paper account and authenticated local gateway access
@@ -112,6 +121,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - background scheduling is still limited to the skeleton runtime; backfill, training, backtests, and simulations are currently CLI/API driven rather than scheduler-driven
 - the setup UI can update runtime paths inside the current app home, but relocating the app home root itself still depends on the CLI or `STOCKTRADEBOT_HOME`
 - a stale `pipx` install built before the packaging fixes will still need a reinstall to pick up the bundled Alembic assets and rebuilt frontend
+- the current local profit-study holdout window from `2025-12-01` through `2026-01-28` never entered a risk-off regime, so `risk_off_gross_exposure` and defensive ETF choices were non-binding on this specific run
 
 ## Next Milestone
 
@@ -123,8 +133,8 @@ This file describes the repository as it exists now. Update it at the end of eve
 - documentation consistency review: completed manually
 - file/path validation for referenced docs: completed for `docs/README.md` links
 - backend checks: `make backend-quality` and `make backend-tests` passed locally
-- coverage check: passed locally at `81.49%`
-- frontend checks: `npm run lint`, `npm run test -- --run`, and `npm run build` passed locally in `frontend/`
+- coverage check: passed locally at `80.84%`
+- frontend checks: `make frontend-check` passed locally
 - frontend browser E2E: `make frontend-e2e` passed locally
 - package build: `make package-check` passed locally
 - repository verification: `make check` passed locally after the Phase 9 intraday implementation
@@ -135,7 +145,8 @@ This file describes the repository as it exists now. Update it at the end of eve
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
 - backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
 - Phase 9 integration verification: full pytest suite passed locally, including daily and intraday API flows, intraday dataset and validation paths, paper execution, live-manual preparation and approval, config mutation, mode transitions, and browser-driven operator workflows
+- daily research recovery verification: local profit-study report `artifacts/reports/research-optimization-current-local.json` completed from isolated app-home copies; current live defaults returned `11.79%` versus SPY `2.23%`, and the best tested configuration returned `18.32%` with `gradient-boosting-v1`, `3`-day rebalances, `15` target positions, and `0.10` turnover penalty
 
 ## Last Updated Because
 
-- 2026-03-10: rewrote the root README into a simpler package-facing format, added a plain-language command guide under `docs/`, validated the updated docs paths and image asset, and updated the docs to reflect the latest documentation surface
+- 2026-03-12: implemented daily research-vs-promotion recovery, added gradient boosting and rank-ensemble daily models, aligned daily backtests with the execution path, completed an isolated local profit study, and updated the docs to reflect the new daily research workflow and measured profit results
