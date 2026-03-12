@@ -14,6 +14,24 @@ DEFAULT_ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co"
 DEFAULT_SEC_COMPANY_FACTS_BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
 DEFAULT_SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 DEFAULT_IBKR_GATEWAY_BASE_URL = "https://127.0.0.1:5000/v1/api"
+QUALITY_SCOPES = ("research", "promotion")
+SUPPORTED_REBALANCE_INTERVAL_DAYS = (1, 3, 5)
+
+
+def normalize_quality_scope(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in QUALITY_SCOPES:
+        supported = ", ".join(QUALITY_SCOPES)
+        raise ValueError(f"Unsupported quality scope '{value}'. Expected one of: {supported}.")
+    return normalized
+
+
+def normalize_rebalance_interval_days(value: int) -> int:
+    normalized = int(value)
+    if normalized not in SUPPORTED_REBALANCE_INTERVAL_DAYS:
+        supported = ", ".join(str(item) for item in SUPPORTED_REBALANCE_INTERVAL_DAYS)
+        raise ValueError(f"Unsupported rebalance interval '{value}'. Expected one of: {supported}.")
+    return normalized
 
 
 def resolve_app_home(app_home: Path | None = None) -> Path:
@@ -251,6 +269,7 @@ class FundamentalsProviderConfig:
 
 @dataclass(slots=True)
 class ModelTrainingConfig:
+    quality_scope: str = "research"
     feature_set_version: str = "daily-core-v1"
     label_version: str = "forward-return-v1"
     model_family: str = "linear-correlation-v1"
@@ -265,6 +284,7 @@ class ModelTrainingConfig:
     min_training_rows: int = 200
     min_validation_folds: int = 2
     target_portfolio_size: int = 10
+    rebalance_interval_days: int = 5
     initial_capital: float = 100_000.0
     commission_bps: float = 1.0
     slippage_bps: float = 5.0
@@ -276,6 +296,9 @@ class ModelTrainingConfig:
             return defaults
 
         return cls(
+            quality_scope=normalize_quality_scope(
+                str(data.get("quality_scope", defaults.quality_scope))
+            ),
             feature_set_version=str(data.get("feature_set_version", defaults.feature_set_version)),
             label_version=str(data.get("label_version", defaults.label_version)),
             model_family=str(data.get("model_family", defaults.model_family)),
@@ -306,6 +329,9 @@ class ModelTrainingConfig:
             target_portfolio_size=int(
                 data.get("target_portfolio_size", defaults.target_portfolio_size)
             ),
+            rebalance_interval_days=normalize_rebalance_interval_days(
+                int(data.get("rebalance_interval_days", defaults.rebalance_interval_days))
+            ),
             initial_capital=float(data.get("initial_capital", defaults.initial_capital)),
             commission_bps=float(data.get("commission_bps", defaults.commission_bps)),
             slippage_bps=float(data.get("slippage_bps", defaults.slippage_bps)),
@@ -313,6 +339,7 @@ class ModelTrainingConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "quality_scope": self.quality_scope,
             "feature_set_version": self.feature_set_version,
             "label_version": self.label_version,
             "model_family": self.model_family,
@@ -327,6 +354,7 @@ class ModelTrainingConfig:
             "min_training_rows": self.min_training_rows,
             "min_validation_folds": self.min_validation_folds,
             "target_portfolio_size": self.target_portfolio_size,
+            "rebalance_interval_days": self.rebalance_interval_days,
             "initial_capital": self.initial_capital,
             "commission_bps": self.commission_bps,
             "slippage_bps": self.slippage_bps,
@@ -387,7 +415,7 @@ class PortfolioConfig:
     neutral_gross_exposure: float = 0.70
     risk_off_gross_exposure: float = 0.35
     risk_off_defensive_allocation: float = 0.20
-    defensive_etf_symbol: str | None = None
+    defensive_etf_symbol: str | None = "IEF"
     symbol_sectors: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -397,6 +425,14 @@ class PortfolioConfig:
             return defaults
 
         defensive_etf_symbol = data.get("defensive_etf_symbol", defaults.defensive_etf_symbol)
+        normalized_defensive_symbol: str | None
+        if defensive_etf_symbol is None:
+            normalized_defensive_symbol = None
+        else:
+            stripped = str(defensive_etf_symbol).strip()
+            normalized_defensive_symbol = (
+                None if stripped.lower() == "none" or not stripped else stripped.upper()
+            )
         symbol_sectors = {
             str(symbol).upper(): str(sector)
             for symbol, sector in data.get("symbol_sectors", {}).items()
@@ -437,9 +473,7 @@ class PortfolioConfig:
                     defaults.risk_off_defensive_allocation,
                 )
             ),
-            defensive_etf_symbol=(
-                None if defensive_etf_symbol is None else str(defensive_etf_symbol).upper()
-            ),
+            defensive_etf_symbol=normalized_defensive_symbol,
             symbol_sectors=symbol_sectors,
         )
 

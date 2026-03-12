@@ -242,5 +242,6 @@ class DatasetSnapshotSummary:
     null_statistics: dict[str, int]
     artifact_path: str
     metadata: dict[str, Any]
+    quality_scope: str = "promotion"
     frequency: str = "daily"
     as_of_timestamp: str | None = None

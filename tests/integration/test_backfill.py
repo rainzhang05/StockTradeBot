@@ -152,6 +152,8 @@ def test_backfill_market_data_persists_payloads_and_universe(isolated_app_home: 
     assert status["latest_run"]["status"] == "completed"
     assert status["fundamentals_observation_count"] == 0
     assert status["validation_counts"] == {"provisional": 2, "quarantined": 2, "verified": 4}
+    assert status["daily_readiness"]["research_state"] == "research-capable"
+    assert status["daily_readiness"]["promotion_state"] == "promotion-ready"
     assert status["latest_universe_snapshot"]["stock_count"] == 2
     assert status["latest_universe_snapshot"]["etf_count"] == 1
     assert len(status["recent_incidents"]) == 2

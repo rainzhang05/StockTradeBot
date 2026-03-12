@@ -54,6 +54,7 @@ from stocktradebot.storage import (
     create_db_engine,
     database_exists,
     database_is_reachable,
+    interrupt_running_backfill_runs,
     record_audit_event,
 )
 
@@ -668,6 +669,7 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             "recent_incidents": [],
         }
 
+    interrupt_running_backfill_runs(config)
     engine = create_db_engine(config)
     try:
         with Session(engine) as session:
@@ -716,6 +718,29 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
     intraday_counts: dict[str, dict[str, int]] = {}
     for frequency, tier, count in intraday_validation_rows:
         intraday_counts.setdefault(frequency, {})[tier] = count
+    validation_counts = {tier: count for tier, count in validation_rows}
+    verified_count = validation_counts.get("verified", 0)
+    provisional_count = validation_counts.get("provisional", 0)
+    daily_readiness = {
+        "research_state": (
+            "research-capable" if verified_count > 0 or provisional_count > 0 else "blocked"
+        ),
+        "promotion_state": "promotion-ready" if verified_count > 0 else "promotion-blocked",
+        "research_ready": verified_count > 0 or provisional_count > 0,
+        "promotion_ready": verified_count > 0,
+        "reason": (
+            "verified canonical daily bars are available"
+            if verified_count > 0
+            else (
+                (
+                    "only provisional daily bars are available; "
+                    "research can run but promotion is blocked"
+                )
+                if provisional_count > 0
+                else "no canonical daily bars are available"
+            )
+        ),
+    }
     return {
         "latest_run": (
             {
@@ -757,7 +782,8 @@ def market_data_status(config: AppConfig, *, incident_limit: int = 20) -> dict[s
             for run in latest_intraday_runs
         ],
         "intraday_validation_counts": intraday_counts,
-        "validation_counts": {tier: count for tier, count in validation_rows},
+        "validation_counts": validation_counts,
+        "daily_readiness": daily_readiness,
         "fundamentals_observation_count": fundamentals_count or 0,
         "recent_incidents": [
             {

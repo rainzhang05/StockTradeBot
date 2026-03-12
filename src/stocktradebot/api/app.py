@@ -417,14 +417,21 @@ def create_app(
         return live_status(current_config())
 
     @app.post("/api/v1/models/datasets/build")
-    def build_dataset(as_of: str | None = None) -> dict[str, object]:
+    def build_dataset(
+        as_of: str | None = None,
+        quality_scope: str | None = None,
+    ) -> dict[str, object]:
         config = current_config()
         try:
             parsed_date = None if as_of is None else date.fromisoformat(as_of)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
         try:
-            summary = build_dataset_snapshot(config, as_of_date=parsed_date)
+            summary = build_dataset_snapshot(
+                config,
+                as_of_date=parsed_date,
+                quality_scope=quality_scope,
+            )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         record_operational_event(
@@ -482,21 +489,28 @@ def create_app(
         return {"validation_run": asdict(summary)}
 
     @app.post("/api/v1/models/train")
-    def train_model_endpoint(as_of: str | None = None) -> dict[str, object]:
+    def train_model_endpoint(
+        as_of: str | None = None,
+        quality_scope: str | None = None,
+    ) -> dict[str, object]:
         config = current_config()
         try:
             parsed_date = None if as_of is None else date.fromisoformat(as_of)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Expected YYYY-MM-DD date format.") from exc
         try:
-            summary = train_model(config, as_of_date=parsed_date)
+            summary = train_model(config, as_of_date=parsed_date, quality_scope=quality_scope)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         record_operational_event(
             config,
             category="api:train",
             message="training run completed via API",
-            details={"run_id": summary.run_id, "model_version": summary.model_version},
+            details={
+                "run_id": summary.run_id,
+                "model_version": summary.model_version,
+                "quality_scope": summary.quality_scope,
+            },
         )
         return {"training_run": asdict(summary)}
 

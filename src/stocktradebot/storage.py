@@ -361,6 +361,7 @@ class DatasetSnapshot(Base):
         nullable=False,
     )
     canonicalization_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    quality_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="promotion")
     generation_code_version: Mapped[str] = mapped_column(String(64), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     null_statistics_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -403,6 +404,7 @@ class ModelRegistryEntry(Base):
         ForeignKey("dataset_snapshots.id"),
         nullable=False,
     )
+    quality_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="promotion")
     feature_set_version: Mapped[str] = mapped_column(String(64), nullable=False)
     label_version: Mapped[str] = mapped_column(String(64), nullable=False)
     training_start_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -428,6 +430,7 @@ class ValidationRun(Base):
         ForeignKey("dataset_snapshots.id"),
         nullable=False,
     )
+    quality_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="promotion")
     model_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("model_registry_entries.id"),
         nullable=True,
@@ -453,6 +456,7 @@ class BacktestRun(Base):
         ForeignKey("dataset_snapshots.id"),
         nullable=False,
     )
+    quality_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="promotion")
     model_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("model_registry_entries.id"),
         nullable=True,
@@ -803,6 +807,7 @@ def initialize_database(config: AppConfig) -> None:
     command.upgrade(alembic_config(config.database_url()), "head")
     upsert_app_state(config, "schema_version", "phase9")
     ensure_system_mode_state(config)
+    interrupt_running_backfill_runs(config)
 
 
 def database_exists(config: AppConfig) -> bool:
@@ -855,6 +860,24 @@ def record_audit_event(config: AppConfig, category: str, message: str) -> None:
         with Session(engine) as session:
             session.add(AuditEvent(category=category, message=message))
             session.commit()
+    finally:
+        engine.dispose()
+
+
+def interrupt_running_backfill_runs(config: AppConfig) -> int:
+    engine = create_db_engine(config)
+    try:
+        with Session(engine) as session:
+            running_rows = session.scalars(
+                select(BackfillRun).where(BackfillRun.status == "running")
+            ).all()
+            for row in running_rows:
+                row.status = "interrupted"
+                row.error_message = "backfill interrupted before completion"
+                row.completed_at = utc_now()
+            if running_rows:
+                session.commit()
+            return len(running_rows)
     finally:
         engine.dispose()
 

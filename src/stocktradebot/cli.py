@@ -96,6 +96,10 @@ FrequencyOption = Annotated[
     str,
     typer.Option("--frequency", help="Intraday research frequency: 15min or 1h."),
 ]
+QualityScopeOption = Annotated[
+    str | None,
+    typer.Option(help="Dataset quality scope: research or promotion."),
+]
 
 
 def _log_cli_event(
@@ -289,11 +293,16 @@ def intraday_validate(
 def train(
     app_home: AppHomeOption = None,
     as_of: AsOfOption = None,
+    quality_scope: QualityScopeOption = None,
 ) -> None:
     config = initialize_config(app_home)
     initialize_database(config)
     try:
-        summary = train_model(config, as_of_date=_parse_as_of_date(as_of))
+        summary = train_model(
+            config,
+            as_of_date=_parse_as_of_date(as_of),
+            quality_scope=quality_scope,
+        )
     except RuntimeError as exc:
         _log_cli_event(
             config,
@@ -308,7 +317,11 @@ def train(
         config,
         command="train",
         message="training command completed",
-        details={"run_id": summary.run_id, "model_version": summary.model_version},
+        details={
+            "run_id": summary.run_id,
+            "model_version": summary.model_version,
+            "quality_scope": summary.quality_scope,
+        },
     )
     typer.echo(json.dumps(asdict(summary), indent=2, default=str))
 

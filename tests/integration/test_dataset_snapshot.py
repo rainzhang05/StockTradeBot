@@ -4,6 +4,8 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from stocktradebot.config import initialize_config
 from stocktradebot.data.models import (
     DailyBarRecord,
@@ -11,7 +13,7 @@ from stocktradebot.data.models import (
     FundamentalPayload,
     ProviderHistoryPayload,
 )
-from stocktradebot.data.service import backfill_market_data
+from stocktradebot.data.service import backfill_market_data, market_data_status
 from stocktradebot.features import build_dataset_snapshot, dataset_status
 from stocktradebot.storage import initialize_database
 
@@ -281,3 +283,91 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
     assert status["feature_set_versions"][0]["version"] == "daily-core-v1"
     assert status["label_versions"][0]["version"] == "forward-return-v1"
     assert status["fundamentals_observation_count"] == 36
+    assert any(
+        row["symbol"] in {"AAPL", "MSFT"} and row["features"]["sector_relative_20d"] is not None
+        for row in rows
+    )
+
+
+def test_provisional_only_daily_data_supports_research_scope_but_blocks_promotion_scope(
+    isolated_app_home: Path,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    config.universe.stock_candidates = ["AAPL", "MSFT"]
+    config.universe.curated_etfs = ["SPY"]
+    config.universe.min_history_days = 20
+    config.universe.liquidity_lookback_days = 20
+    config.universe.max_stocks = 2
+    config.model_training.min_feature_history_days = 60
+    config.model_training.dataset_lookback_days = 100
+    config.save()
+    initialize_database(config)
+
+    primary = FakePriceProvider(
+        "stooq",
+        bars_by_symbol={
+            "AAPL": _price_series(
+                "stooq",
+                "AAPL",
+                start_date=date(2025, 12, 1),
+                days=120,
+                starting_close=100.0,
+                daily_step=0.6,
+            ),
+            "MSFT": _price_series(
+                "stooq",
+                "MSFT",
+                start_date=date(2025, 12, 1),
+                days=120,
+                starting_close=200.0,
+                daily_step=0.4,
+            ),
+            "SPY": _price_series(
+                "stooq",
+                "SPY",
+                start_date=date(2025, 12, 1),
+                days=120,
+                starting_close=500.0,
+                daily_step=0.3,
+            ),
+        },
+    )
+
+    backfill_market_data(
+        config,
+        as_of_date=date(2026, 3, 20),
+        lookback_days=110,
+        symbols=["AAPL", "MSFT", "SPY"],
+        providers=[primary],
+        primary_provider="stooq",
+        secondary_provider=None,
+    )
+
+    status = market_data_status(config)
+    assert status["daily_readiness"]["research_state"] == "research-capable"
+    assert status["daily_readiness"]["promotion_state"] == "promotion-blocked"
+
+    research_dataset = build_dataset_snapshot(
+        config,
+        as_of_date=date(2026, 3, 20),
+        quality_scope="research",
+    )
+    assert research_dataset.quality_scope == "research"
+    artifact_path = config.app_home / research_dataset.artifact_path
+    rows = [
+        json.loads(line)
+        for line in artifact_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows
+    assert any(
+        row["symbol"] in {"AAPL", "MSFT"} and row["features"]["sector_relative_20d"] is not None
+        for row in rows
+    )
+
+    with pytest.raises(RuntimeError, match="requested quality scope"):
+        build_dataset_snapshot(
+            config,
+            as_of_date=date(2026, 3, 20),
+            quality_scope="promotion",
+        )

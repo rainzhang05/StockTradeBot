@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from stocktradebot import __version__
-from stocktradebot.config import AppConfig
+from stocktradebot.config import AppConfig, normalize_quality_scope
 from stocktradebot.data.models import (
     CanonicalBarRecord,
     CorporateActionRecord,
@@ -19,6 +19,7 @@ from stocktradebot.data.models import (
     FundamentalObservationRecord,
     LabelRowRecord,
 )
+from stocktradebot.data.universe import resolve_symbol_sectors
 from stocktradebot.storage import (
     CanonicalDailyBar,
     CorporateActionObservation,
@@ -182,19 +183,27 @@ def _bar_return(previous_close: float, current_close: float) -> float:
     return current_close / previous_close - 1.0
 
 
-def _load_verified_bars(
+def _allowed_validation_tiers(quality_scope: str) -> tuple[str, ...]:
+    if quality_scope == "promotion":
+        return ("verified",)
+    return ("verified", "provisional")
+
+
+def _load_canonical_bars(
     session: Session,
     *,
     symbols: Sequence[str],
     start_date: date,
     end_date: date,
+    quality_scope: str,
 ) -> list[CanonicalBarRecord]:
+    allowed_tiers = _allowed_validation_tiers(quality_scope)
     rows = session.scalars(
         select(CanonicalDailyBar).where(
             CanonicalDailyBar.symbol.in_(tuple(symbols)),
             CanonicalDailyBar.trade_date >= start_date,
             CanonicalDailyBar.trade_date <= end_date,
-            CanonicalDailyBar.validation_tier == "verified",
+            CanonicalDailyBar.validation_tier.in_(allowed_tiers),
         )
     ).all()
     return [
@@ -558,13 +567,15 @@ def _write_dataset_artifact(
     config: AppConfig,
     *,
     as_of_date: date,
+    quality_scope: str,
     feature_set_version: str,
     label_version: str,
     rows: Sequence[dict[str, object]],
 ) -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     artifact_path = config.dataset_artifacts_dir / (
-        f"dataset-{as_of_date.isoformat()}-{feature_set_version}-{label_version}-{timestamp}.jsonl"
+        "dataset-"
+        f"{as_of_date.isoformat()}-{quality_scope}-{feature_set_version}-{label_version}-{timestamp}.jsonl"
     )
     payload = "\n".join(json.dumps(row, sort_keys=True, default=str) for row in rows)
     artifact_path.write_text(payload + ("\n" if payload else ""), encoding="utf-8")
@@ -575,8 +586,12 @@ def build_dataset_snapshot(
     config: AppConfig,
     *,
     as_of_date: date | None = None,
+    quality_scope: str | None = None,
 ) -> DatasetSnapshotSummary:
     effective_as_of_date = as_of_date or datetime.now(UTC).date()
+    effective_quality_scope = normalize_quality_scope(
+        quality_scope or config.model_training.quality_scope
+    )
     start_date = date.fromordinal(
         effective_as_of_date.toordinal() - config.model_training.dataset_lookback_days
     )
@@ -593,14 +608,17 @@ def build_dataset_snapshot(
             if benchmark_symbol not in all_symbols:
                 all_symbols = sorted({*all_symbols, benchmark_symbol})
 
-            bars = _load_verified_bars(
+            bars = _load_canonical_bars(
                 session,
                 symbols=all_symbols,
                 start_date=start_date,
                 end_date=effective_as_of_date,
+                quality_scope=effective_quality_scope,
             )
             if not bars:
-                raise RuntimeError("No verified canonical bars are available for Phase 3 datasets.")
+                raise RuntimeError(
+                    "No canonical daily bars are available for the requested quality scope."
+                )
 
             actions = _load_corporate_actions(
                 session,
@@ -657,6 +675,7 @@ def build_dataset_snapshot(
 
             feature_rows: list[FeatureRowRecord] = []
             label_rows: list[LabelRowRecord] = []
+            symbol_sectors = resolve_symbol_sectors(config)
 
             for symbol, symbol_bars in sorted(bars_by_symbol.items()):
                 if symbol == benchmark_symbol:
@@ -802,6 +821,12 @@ def build_dataset_snapshot(
                 strength_values = [float(value) for value in strengths if value is not None]
                 strength_mean = _mean(strength_values) if strength_values else 0.0
                 strength_std = _stddev(strength_values) if strength_values else 0.0
+                sector_returns: dict[str, list[float]] = defaultdict(list)
+                for row in rows_for_date:
+                    sector = symbol_sectors.get(row.symbol)
+                    momentum_20d = row.values["momentum_20d"]
+                    if sector is not None and momentum_20d is not None:
+                        sector_returns[sector].append(float(momentum_20d))
 
                 label_candidates: list[float] = []
                 for row in rows_for_date:
@@ -816,6 +841,7 @@ def build_dataset_snapshot(
                 for row in rows_for_date:
                     row_values = dict(row.values)
                     momentum_20d = row_values["momentum_20d"]
+                    sector = symbol_sectors.get(row.symbol)
                     if momentum_20d is not None and strength_std > 0:
                         row_values["cross_sectional_strength_20d"] = (
                             float(momentum_20d) - strength_mean
@@ -824,6 +850,13 @@ def build_dataset_snapshot(
                         row_values["cross_sectional_strength_20d"] = (
                             0.0 if momentum_20d is not None else None
                         )
+                    if sector is not None and momentum_20d is not None:
+                        peer_returns = sector_returns.get(sector, [])
+                        row_values["sector_relative_20d"] = (
+                            float(momentum_20d) - _mean(peer_returns) if peer_returns else None
+                        )
+                    else:
+                        row_values["sector_relative_20d"] = None
                     updated_feature_rows.append(
                         FeatureRowRecord(
                             feature_set_version=row.feature_set_version,
@@ -910,6 +943,7 @@ def build_dataset_snapshot(
             artifact_path = _write_dataset_artifact(
                 config,
                 as_of_date=effective_as_of_date,
+                quality_scope=effective_quality_scope,
                 feature_set_version=config.model_training.feature_set_version,
                 label_version=config.model_training.label_version,
                 rows=artifact_rows,
@@ -921,6 +955,7 @@ def build_dataset_snapshot(
                 feature_set_version=config.model_training.feature_set_version,
                 label_version=config.model_training.label_version,
                 canonicalization_version=CANONICALIZATION_VERSION,
+                quality_scope=effective_quality_scope,
                 generation_code_version=__version__,
                 row_count=len(artifact_rows),
                 null_statistics_json=json.dumps(
@@ -946,6 +981,7 @@ def build_dataset_snapshot(
                 universe_snapshot_id=latest_snapshot_id,
                 feature_set_version=config.model_training.feature_set_version,
                 label_version=config.model_training.label_version,
+                quality_scope=effective_quality_scope,
                 row_count=len(artifact_rows),
                 null_statistics=dict(sorted(null_statistics.items())),
                 artifact_path=artifact_path,
@@ -997,6 +1033,7 @@ def dataset_status(config: AppConfig) -> dict[str, object]:
                 "universe_snapshot_id": latest_snapshot.universe_snapshot_id,
                 "feature_set_version": latest_snapshot.feature_set_version,
                 "label_version": latest_snapshot.label_version,
+                "quality_scope": latest_snapshot.quality_scope,
                 "row_count": latest_snapshot.row_count,
                 "artifact_path": latest_snapshot.artifact_path,
                 "null_statistics": json.loads(latest_snapshot.null_statistics_json),
