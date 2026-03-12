@@ -5,7 +5,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 ## Repository Snapshot
 
 - Date: 2026-03-12
-- Branch: `codex/daily-research-profit-opt`
+- Branch: `main`
 - Repository state: Phase 9 intraday research expansion plus daily research recovery, full-history daily backfills, and multi-year walk-forward profit optimization implemented
 - Application code: package, CLI, API, runtime, storage, operator frontend, packaged frontend asset serving, structured operational logging, daily and intraday market-data pipelines, fundamentals ingestion, daily and intraday dataset generation, model training, daily and intraday walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
 - CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, and package verification
@@ -170,6 +170,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
+- 2026-03-12: fast-forward merged the verified daily research, universe expansion, strategy-profile readiness, and repo-hygiene work into `main`, then refreshed this file so the repository snapshot reflects the merged branch
 - 2026-03-12: completed a repository-wide documentation consistency review against the live code and runtime, refreshed stale full-history snapshot counts, reran `make check`, and prepared the branch for merge
 - 2026-03-12: added four-slot strategy-profile readiness and repair workflows, classified the current winning strategy as the `growth` profile, exposed the new API and Overview UI surfaces, reran backend plus frontend verification, and refreshed the docs to match the new operator workflow
 - 2026-03-12: added a repository-wide `.DS_Store` ignore rule and refreshed current state for the repo-hygiene update
