@@ -68,6 +68,13 @@ Each external data source must be wrapped in an adapter exposing:
 
 Providers may differ by domain. A source suitable for prices does not automatically qualify as a fundamentals source.
 
+Current daily provider posture:
+
+- Stooq is the default primary daily provider
+- Alpha Vantage remains an optional corroborating secondary provider when an API key is available
+- Yahoo daily chart data is enabled as a free research fallback provider for missing or sparse primary coverage
+- provider-coverage artifacts must record which provider supplied each symbol/date range and which symbols remained primary-only, fallback-only, or unresolved
+
 ## 5. Canonicalization Policy
 
 The repository does not trust a single free provider as universally authoritative.
@@ -102,6 +109,12 @@ Default agreement tolerances:
 - exact date match required
 
 If no confirming source is available, a bar may remain `provisional` for development use but must not enter promotable datasets or live-critical workflows.
+
+Daily corroboration rules in the current implementation:
+
+- Stooq plus Yahoo agreement within tolerance may promote a bar to `verified`
+- Yahoo-only bars remain `provisional`
+- unresolved Stooq versus Yahoo disagreement remains `quarantined`
 
 ### 5.3 Corporate Actions
 
@@ -173,6 +186,21 @@ Feature governance rules:
 - changes to formulas or defaults require a new feature-set version
 - feature computation must be deterministic and batch reproducible
 
+Current daily feature-set versions:
+
+- `daily-core-v1`
+  - momentum over `5d`, `20d`, and `60d`
+  - short-horizon mean reversion, volatility, drawdown, liquidity, benchmark-relative, sector-relative, regime, and conservative fundamentals features
+- `daily-alpha-v2`
+  - everything in `daily-core-v1`
+  - `momentum_120d`
+  - `momentum_spread_20d_60d`
+  - `benchmark_relative_60d`
+  - `sector_relative_60d`
+  - `breakout_distance_60d`
+  - `volatility_ratio_20d_60d`
+  - `dollar_volume_ratio_20d_60d`
+
 ## 8. Label Definitions
 
 V1 baseline labels:
@@ -187,6 +215,21 @@ Label rules:
 - `research` labels may be computed from the same bar set allowed by the dataset `quality_scope`
 - labels must align to the decision timestamp and available data at that time
 - label versions are explicit and stored with datasets and models
+
+Current daily label versions:
+
+- `forward-return-v1`
+  - `ranking_label_5d`
+  - `forward_return_5d`
+  - `forward_return_10d`
+  - `forward_max_drawdown_10d`
+- `forward-excess-v2`
+  - `ranking_label_5d_excess`
+  - `forward_return_5d`
+  - `forward_return_10d`
+  - `forward_excess_return_5d`
+  - `forward_excess_return_10d`
+  - `forward_max_drawdown_10d`
 
 ## 9. Dataset Versioning and Lineage
 
@@ -256,5 +299,7 @@ Current implementation status:
 - intraday provider ingestion, canonicalization, dataset generation, and validation exist for `15min` and `1h`
 - intraday quality reports are persisted per backfill run and feed promotion-readiness checks for intraday validation
 - intraday research can bootstrap from the earliest available universe snapshot when a dense historical sequence of universe snapshots is not yet present
-- daily full-history backfills can now hydrate multi-decade Stooq history and persist monthly historical universe snapshots for research
+- daily full-history backfills can now hydrate multi-decade Stooq history, fall back to Yahoo when primary coverage is sparse, and persist monthly historical universe snapshots plus an explicit as-of snapshot for research
+- the bundled reproducible stock candidate pool now resolves to 300 liquid U.S. common stocks with bundled sector metadata
+- daily provider-coverage reports are persisted under `artifacts/reports/` for each full-history backfill run
 - daily data remains the production baseline for model promotion and execution while intraday research matures

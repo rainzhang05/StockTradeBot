@@ -71,17 +71,22 @@ This file describes the repository as it exists now. Update it at the end of eve
 - corrected the persisted app-state schema marker written during database bootstrap from `phase6` to `phase9`
 - added daily `quality_scope` support so `research` datasets, models, validations, and backtests can run on provisional daily bars while `promotion` remains verified-only
 - added stale backfill-run interruption handling plus daily readiness reporting that distinguishes `research-capable` from `promotion-blocked`
+- replaced the bundled bootstrap stock seed list with a reproducible 300-name liquid U.S. common-stock candidate pool plus bundled sector metadata, while keeping the curated ETF list separate
+- added a Yahoo daily provider adapter and research fallback-provider selection so daily backfills can supplement sparse primary coverage without weakening promotion-grade validation rules
+- added daily provider-coverage report artifacts that persist per-provider symbol coverage, validation-tier counts, and fallback-only or unresolved gaps for each full-history run
 - added bundled stock sector mappings, consistent curated ETF resolution, and a concrete default defensive ETF symbol for risk-off handling
+- added the `daily-alpha-v2` daily feature set and the `forward-excess-v2` daily label set alongside the existing daily core and forward-return baseline versions
 - added `gradient-boosting-v1` and `rank-ensemble-v1` daily model families on top of the existing linear baseline
 - aligned daily backtests with the execution path so research uses the same target-portfolio construction, regime handling, turnover logic, defensive ETF behavior, slippage, commissions, and partial-fill assumptions as simulation
 - added daily rebalance-interval support for `1`, `3`, and `5` trading days, with research defaulting to `5`
-- added the isolated daily research optimizer helper at `scripts/research_optimize.py` and a local profit-study report workflow under `artifacts/reports/`
+- added the isolated daily research optimizer helper at `scripts/research_optimize.py`, staged alpha/model/portfolio comparisons, a linear-preference stability rule, and a source-config activation gate that requires both walk-forward and holdout excess-return improvement
 - ran a local profit study on isolated copies of the current app home and wrote the combined current-defaults report to `artifacts/reports/research-optimization-current-local.json`
 - added full-history daily backfill support plus monthly historical universe snapshots and explicit as-of-date snapshot persistence for long-range research windows
 - updated training so the persisted research backtest is now the full walk-forward validation window instead of only the latest holdout segment
-- hydrated the direct `~/.stocktradebot` runtime with Stooq full-history daily bars from `1990-01-02` through `2026-03-11`, producing `9,114` research-ready trade dates and `438` distinct universe snapshot dates
-- ran a full-history walk-forward shortlist across baseline, linear, gradient, and rank configurations and wrote the results to `artifacts/reports/walkforward-shortlist-full-history.json`
-- applied the best tested full-history walk-forward config to the live app-home: `linear-correlation-v1`, `3`-day rebalance, `20` target positions, `0.10` turnover penalty, `research` quality scope, and `2,500` daily dataset lookback days
+- hydrated the direct `~/.stocktradebot` runtime with a 300-stock plus 26-ETF full-history daily backfill from `1990-01-02` through `2026-03-11`, using Stooq primary data plus Yahoo fallback where needed
+- produced a live runtime with `326` distinct symbols, `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `9,114` distinct trade dates, and `436` historical universe snapshots
+- ran a full-history staged shortlist on an isolated copy of the hydrated 300-name runtime and wrote the report to `artifacts/reports/research-shortlist-300-full-history-20260312T092500951450Z.json`
+- activated the best measured live research config and retrained the live app-home: `linear-correlation-v1`, `daily-alpha-v2`, `forward-return-v1`, `ranking_label_5d`, `research` quality scope, `3`-day rebalance, `20` target positions, `0.10` turnover penalty, `risk_off_gross_exposure=0.35`, and `defensive_etf_symbol=null`
 
 ## Subsystem Status Matrix
 
@@ -91,9 +96,9 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Python package | Complete for Phase 1 | `pyproject.toml`, editable install metadata, and CLI entrypoint exist |
 | Backend API | Complete for Phase 9 | FastAPI app exposes health, setup, config, daily and intraday market-data, daily and intraday dataset, daily and intraday validation, backtest, risk, portfolio, order, fill, broker, paper, live, and frontend-serving endpoints |
 | Database/storage | Complete for Phase 9 | SQLite bootstrap, Alembic migrations, daily and intraday market-data tables, dataset tables, model registry tables, mode state, freeze state, simulation runs, broker snapshots, broker orders, approvals, transition audit, and raw/artifact storage exist; installed runtimes now prefer packaged Alembic assets during bootstrap |
-| Data ingestion | Complete for Phase 9 | Provider adapters, raw payload persistence, canonical daily bars, canonical intraday bars, incidents, universe snapshots, SEC fundamentals, and intraday quality reporting are implemented |
-| Features/fundamentals | Complete for Phase 9 | Availability-aware daily and intraday feature generation, labels, dataset lineage, and artifact export are implemented |
-| Models/backtesting | Complete for Phase 9 plus daily research recovery | Daily research can now train and backtest in `research` scope on provisional bars, training persists a full walk-forward validation backtest over the configured research window, daily backtests share the execution-path portfolio constructor, gradient-boosting and rank-ensemble families are implemented, and model/validation/backtest lineage persists `quality_scope` |
+| Data ingestion | Complete for Phase 9 plus daily universe expansion | Provider adapters, raw payload persistence, canonical daily bars, canonical intraday bars, incidents, universe snapshots, SEC fundamentals support, Stooq primary plus Yahoo fallback daily hydration, and provider-coverage reporting are implemented |
+| Features/fundamentals | Complete for Phase 9 plus daily alpha upgrade | Availability-aware daily and intraday feature generation, labels, dataset lineage, artifact export, `daily-alpha-v2`, and `forward-excess-v2` are implemented; the live app-home still has zero SEC fundamentals because no compliant SEC user agent is configured |
+| Models/backtesting | Complete for Phase 9 plus daily research optimization | Daily research can now train and backtest in `research` scope on provisional and verified bars, training persists a full walk-forward validation backtest over the configured research window, daily backtests share the execution-path portfolio constructor, staged optimizer logic exists for alpha/model/portfolio comparisons, and the active live research default is the linear `daily-alpha-v2` stack |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
 | Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, and packaged frontend serving remain implemented while the default surface hides raw backend payloads, uses a more polished production-style visual system, and focuses on non-technical operator decisions |
@@ -109,7 +114,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - approximate point-in-time fundamentals are allowed only with conservative availability handling
 - live-manual is the default live profile; live-autonomous requires stricter gates
 - repository-wide test coverage target is `>= 80%` once code and tests exist
-- verified canonical bars still require a corroborating secondary provider; the default Stooq-only setup yields provisional bars until a secondary source is enabled
+- verified canonical bars still require corroboration; the default runtime now uses Yahoo as a free daily fallback provider, so Stooq plus Yahoo agreement can yield verified bars while Yahoo-only rows remain provisional
 - dataset builds require a prior backfill because the feature pipeline depends on persisted canonical bars and universe snapshots
 - intraday research currently depends on free-source intraday coverage quality and can fall back to the earliest available universe snapshot when older historical snapshot coverage is missing
 - simulation mode may use research-only models under the current default config
@@ -121,11 +126,12 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - live-autonomous execution support exists, but a fresh repository will still block it because the stricter safe-day requirements are intentionally unmet
 - the IBKR adapter assumes a local authenticated Client Portal Gateway and does not yet manage gateway startup or login orchestration
-- the built-in stock candidate seed list is a bootstrap set rather than a full ~300-name universe; wider coverage depends on configuring more candidate symbols
 - background scheduling is still limited to the skeleton runtime; backfill, training, backtests, and simulations are currently CLI/API driven rather than scheduler-driven
 - the setup UI can update runtime paths inside the current app home, but relocating the app home root itself still depends on the CLI or `STOCKTRADEBOT_HOME`
 - a stale `pipx` install built before the packaging fixes will still need a reinstall to pick up the bundled Alembic assets and rebuilt frontend
-- the built-in daily provider stack is still Stooq-first in the default runtime; Yahoo via `yfinance` was tested during this task but remained unreliable in this environment, and Alpha Vantage daily verification still depends on supplying an API key
+- the live runtime still has `0` persisted fundamentals observations because `fundamentals_provider.enabled` is off and no compliant `SEC_USER_AGENT` is configured
+- the built-in daily provider stack is still Stooq-first in the default runtime; Yahoo now acts as a free research fallback provider, while Alpha Vantage corroboration remains optional and still depends on supplying an API key
+- the exhaustive staged optimizer grid is implemented in code, but on the rebuilt 300-name full-history runtime a single full experiment currently takes roughly six minutes, so a true 222-run grid would take on the order of twenty-two hours; the measured live production selection therefore comes from a targeted staged shortlist around the implemented objective
 - the explicit `stocktradebot backtest` command still replays the selected trained model through the shared execution-path backtester, while the canonical multi-year research profitability metric now lives in the persisted training-time walk-forward validation backtest artifact
 
 ## Next Milestone
@@ -137,8 +143,8 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - documentation consistency review: completed manually
 - file/path validation for referenced docs: completed for `docs/README.md` links
-- backend checks: `make backend-quality` and `make backend-tests` passed locally
-- coverage check: passed locally at `81.17%`
+- backend checks: `make backend-quality` and `make backend-tests` passed locally after the daily alpha upgrade, Yahoo fallback integration, and optimizer rewrite
+- coverage check: passed locally at `80.99%`
 - frontend checks: `make frontend-check` passed locally
 - frontend browser E2E: `make frontend-e2e` passed locally
 - package build: `make package-check` passed locally
@@ -151,9 +157,10 @@ This file describes the repository as it exists now. Update it at the end of eve
 - backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
 - Phase 9 integration verification: full pytest suite passed locally, including daily and intraday API flows, intraday dataset and validation paths, paper execution, live-manual preparation and approval, config mutation, mode transitions, and browser-driven operator workflows
 - daily research recovery verification: local profit-study report `artifacts/reports/research-optimization-current-local.json` completed from isolated app-home copies; the short holdout winner returned `18.32%` with `gradient-boosting-v1`, `3`-day rebalances, `15` target positions, and `0.10` turnover penalty
-- full-history daily verification: the direct `~/.stocktradebot` runtime now contains `815,240` canonical daily bars from `1990-01-02` through `2026-03-11`, `9,114` research-ready trade dates, and `438` historical universe snapshots after `stocktradebot backfill --full-history --historical-snapshots`
-- full-history walk-forward comparison: `artifacts/reports/walkforward-shortlist-full-history.json` completed from an isolated copy of the hydrated app-home; the best tested configuration was `linear-correlation-v1` with `3`-day rebalances, `20` target positions, and `0.10` turnover penalty, returning `75.77%` total with `10.37%` annualized over `2020-04-20` through `2026-01-09`, versus SPY at `157.86%`
+- full-history daily verification: the direct `~/.stocktradebot` runtime now contains `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `326` distinct symbols, `9,114` distinct trade dates, and `436` historical universe snapshots after the rebuilt `stocktradebot backfill --full-history --historical-snapshots`
+- 300-name staged shortlist verification: `artifacts/reports/research-shortlist-300-full-history-20260312T092500951450Z.json` completed from an isolated copy of the rebuilt app-home; the activated winner was `linear-correlation-v1` with `daily-alpha-v2`, `forward-return-v1`, `3`-day rebalances, `20` target positions, and `0.10` turnover penalty, beating the rebuilt live baseline on both full walk-forward excess return and recent holdout excess return
+- live retraining verification: the activated live model `linear-correlation-v1-20260312T093124127851Z` completed with walk-forward total return `221.98%`, walk-forward excess return `200.87%`, holdout total return `32.12%`, and holdout excess return `29.89%`
 
 ## Last Updated Because
 
-- 2026-03-12: added full-history daily backfills plus historical universe snapshots, switched persisted training backtests to full walk-forward validation windows, hydrated the live app-home with multi-decade Stooq history, compared multi-year walk-forward configuration variants, updated the live default config to the best tested long-range setting, and refreshed the docs to match the measured results
+- 2026-03-12: replaced the bundled daily stock universe with a reproducible 300-name pool, added Yahoo daily fallback coverage, introduced `daily-alpha-v2` and the staged optimizer/activation gate, rebuilt the live app-home with 300-name full-history daily data, selected the best measured alpha stack, retrained the live runtime, and refreshed the docs to match the measured results

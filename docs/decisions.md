@@ -102,3 +102,11 @@ Each decision includes:
 - Decision: repository-wide test coverage must remain at least 80%, and local verification must track the intent of GitHub workflows.
 - Why: the repository is meant to be maintained by agents; weak verification would make that unsafe.
 - Impact: any future implementation phase must include the missing test and workflow harness needed to enforce this rule.
+
+### ADR-012: Stable Daily Production Selection
+
+- Status: accepted
+- Date: 2026-03-12
+- Decision: daily production-selection defaults should prefer the simpler linear family unless a more complex challenger wins clearly on both full walk-forward excess return and recent holdout excess return.
+- Why: short-window gains from more complex daily models were not stable enough once the repository could evaluate them on the rebuilt multi-year, 300-name research runtime.
+- Impact: gradient-boosting and rank-ensemble models remain supported for research, but promotion-minded default selection should stay linear unless a challenger beats linear by more than the documented optimizer thresholds.

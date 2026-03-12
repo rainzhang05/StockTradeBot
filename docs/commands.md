@@ -159,7 +159,12 @@ The repository also includes a research sweep helper for daily profit optimizati
 Behavior:
 
 - copies the source app home into an isolated runtime under `artifacts/research-optimize/`
-- runs the fixed daily `research` sweep across model family, rebalance interval, and portfolio-risk combinations
+- runs a staged daily `research` comparison:
+  - Stage A: linear alpha-stack comparison across `daily-core-v1`, `daily-alpha-v2`, and `forward-excess-v2`
+  - Stage B: linear, gradient-boosting, and rank-ensemble family challengers on the winning alpha stack
+  - Stage C: rebalance and portfolio-risk comparisons on the winning alpha/model combination
+- ranks results by full walk-forward excess return, recent holdout excess return, drawdown, turnover, and then model simplicity
+- applies the winning config back to the source app home only if it beats the current baseline on both full walk-forward excess return and recent holdout excess return
 - writes a machine-readable leaderboard report under `artifacts/reports/`
 
 Use `--source-app-home PATH`, `--output-path PATH`, or `--isolated-root PATH` when you want to control the research source or output locations.
