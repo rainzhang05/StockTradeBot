@@ -110,3 +110,11 @@ Each decision includes:
 - Decision: daily production-selection defaults should prefer the simpler linear family unless a more complex challenger wins clearly on both full walk-forward excess return and recent holdout excess return.
 - Why: short-window gains from more complex daily models were not stable enough once the repository could evaluate them on the rebuilt multi-year, 300-name research runtime.
 - Impact: gradient-boosting and rank-ensemble models remain supported for research, but promotion-minded default selection should stay linear unless a challenger beats linear by more than the documented optimizer thresholds.
+
+### ADR-013: Strategy Profile Modes Stay Separate From Runtime Modes
+
+- Status: accepted
+- Date: 2026-03-12
+- Decision: the repository should treat user-facing strategy profile modes as a separate concept from runtime execution modes.
+- Why: the product now needs four levels of strategy aggressiveness while the existing runtime already uses `simulation`, `paper`, `live-manual`, and `live-autonomous`; mixing those meanings under one mode concept would make the UI and operator guidance ambiguous.
+- Impact: operator surfaces and APIs must distinguish execution mode from strategy profile. The initial four-profile catalog is `conservative`, `balanced`, `growth`, and `aggressive`, with only `growth` currently defined.

@@ -136,7 +136,38 @@ Rules:
 
 Mode transitions must be auditable and persisted.
 
-## 7. Live Approval Profiles
+## 7. Strategy Profile Modes
+
+Strategy profile modes are separate from runtime execution modes.
+
+Runtime modes answer how the system is trading:
+
+- `simulation`
+- `paper`
+- `live-manual`
+- `live-autonomous`
+
+Strategy profile modes answer which risk/alpha profile the current research stack belongs to:
+
+- `conservative`
+- `balanced`
+- `growth`
+- `aggressive`
+
+Current implementation status:
+
+- only `growth` is defined today
+- `growth` is the current winning research profile
+- it is a medium-high aggressiveness profile rather than the maximum-risk slot because it remains long-only, diversified, turnover-aware, and still reduces exposure in risk-off conditions
+- the other three profile slots remain intentionally empty until they are designed and validated
+
+Operator workflow requirements:
+
+- the UI must show whether each strategy profile has the required daily data, dataset snapshot, trained model, and backtest artifacts
+- the UI must expose a single repair action that can hydrate missing daily history, rebuild shared daily resources, and retrain any currently defined strategy profiles
+- empty strategy profiles must be shown explicitly as undefined rather than incorrectly reported as broken
+
+## 8. Live Approval Profiles
 
 ### 7.1 Live-Manual
 
@@ -159,7 +190,7 @@ Requirements:
 
 Autonomous mode must be harder to enter than manual mode.
 
-## 8. Validation and Promotion Gates
+## 9. Validation and Promotion Gates
 
 Before a model becomes eligible for `live-manual`:
 
@@ -179,7 +210,7 @@ Before a model becomes eligible for `live-autonomous`:
 Promotion decisions must remain explicit and auditable. No model promotes itself automatically.
 `research`-scope models are never promotable candidates, even if their research backtests are strong.
 
-## 9. Backtesting Requirements
+## 10. Backtesting Requirements
 
 Backtests must be event-driven and include:
 

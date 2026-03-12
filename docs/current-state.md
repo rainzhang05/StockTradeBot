@@ -87,6 +87,11 @@ This file describes the repository as it exists now. Update it at the end of eve
 - produced a live runtime with `326` distinct symbols, `2,181,217` canonical daily bars, `25,385` verified bars, `2,045,003` provisional bars, `110,829` quarantined bars, `9,114` distinct trade dates, and `436` historical universe snapshots
 - ran a full-history staged shortlist on an isolated copy of the hydrated 300-name runtime and wrote the report to `artifacts/reports/research-shortlist-300-full-history-20260312T092500951450Z.json`
 - activated the best measured live research config and retrained the live app-home: `linear-correlation-v1`, `daily-alpha-v2`, `forward-return-v1`, `ranking_label_5d`, `research` quality scope, `3`-day rebalance, `20` target positions, `0.10` turnover penalty, `risk_off_gross_exposure=0.35`, and `defensive_etf_symbol=null`
+- added a separate four-slot strategy-profile catalog distinct from runtime execution modes: `conservative`, `balanced`, `growth`, and `aggressive`
+- classified the current winning daily strategy as the `growth` profile and left the other three strategy-profile slots intentionally undefined for later development
+- added backend strategy-profile readiness reporting that matches stored daily datasets, models, validations, and backtests against the currently defined strategy profiles
+- added a strategy-resource repair workflow that can initialize the local database, hydrate missing daily history, rebuild monthly universe snapshots when needed, and retrain plus backtest all currently defined strategy profiles
+- exposed strategy-profile readiness and the repair action through the operator workspace API and the default `Overview` UI, so operators can see which profiles are ready, stale, missing resources, or intentionally empty
 
 ## Subsystem Status Matrix
 
@@ -101,7 +106,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 | Models/backtesting | Complete for Phase 9 plus daily research optimization | Daily research can now train and backtest in `research` scope on provisional and verified bars, training persists a full walk-forward validation backtest over the configured research window, daily backtests share the execution-path portfolio constructor, staged optimizer logic exists for alpha/model/portfolio comparisons, and the active live research default is the linear `daily-alpha-v2` stack |
 | Portfolio/risk/execution | Complete for Phase 6 | Regime-aware portfolio construction, risk freeze engine, simulation runs, paper execution, live-manual approval workflows, and trading status surfaces are implemented |
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
-| Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, and packaged frontend serving remain implemented while the default surface hides raw backend payloads, uses a more polished production-style visual system, and focuses on non-technical operator decisions |
+| Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, strategy-profile readiness cards, and packaged frontend serving remain implemented while the default surface hides raw backend payloads, uses a more polished production-style visual system, and focuses on non-technical operator decisions |
 | Tests/coverage | Complete for Phase 9 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E; package smoke verification now tests installed runtime serving plus installed `status` and `--check-only` command flows; intraday research paths are covered by unit and integration tests |
 | GitHub Actions | Complete for Phase 9 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build plus installed-wheel smoke verification for the current intraday-capable codebase, including direct installed-command runtime checks |
 
@@ -133,6 +138,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - the built-in daily provider stack is still Stooq-first in the default runtime; Yahoo now acts as a free research fallback provider, while Alpha Vantage corroboration remains optional and still depends on supplying an API key
 - the exhaustive staged optimizer grid is implemented in code, but on the rebuilt 300-name full-history runtime a single full experiment currently takes roughly six minutes, so a true 222-run grid would take on the order of twenty-two hours; the measured live production selection therefore comes from a targeted staged shortlist around the implemented objective
 - the explicit `stocktradebot backtest` command still replays the selected trained model through the shared execution-path backtester, while the canonical multi-year research profitability metric now lives in the persisted training-time walk-forward validation backtest artifact
+- only the `growth` strategy profile is currently defined; `conservative`, `balanced`, and `aggressive` remain empty placeholders until later strategy work fills them in
 
 ## Next Milestone
 
@@ -143,10 +149,10 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 - documentation consistency review: completed manually
 - file/path validation for referenced docs: completed for `docs/README.md` links
-- backend checks: `make backend-quality` and `make backend-tests` passed locally after the daily alpha upgrade, Yahoo fallback integration, and optimizer rewrite
-- coverage check: passed locally at `80.99%`
+- backend checks: `make backend-quality` and `make backend-tests` passed locally after the strategy-profile readiness and repair workflow addition
+- coverage check: passed locally at `80.91%`
 - frontend checks: `make frontend-check` passed locally
-- frontend browser E2E: `make frontend-e2e` passed locally
+- frontend browser E2E: `make frontend-e2e` passed locally after updating the operator mock workspace for the new strategy-profile UI
 - package build: `make package-check` passed locally
 - repository verification: `make check` passed locally after the Phase 9 intraday implementation
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, verify `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`, and confirm the installed runtime serves the bundled UI
@@ -163,4 +169,4 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
-- 2026-03-12: replaced the bundled daily stock universe with a reproducible 300-name pool, added Yahoo daily fallback coverage, introduced `daily-alpha-v2` and the staged optimizer/activation gate, rebuilt the live app-home with 300-name full-history daily data, selected the best measured alpha stack, retrained the live runtime, and refreshed the docs to match the measured results
+- 2026-03-12: added four-slot strategy-profile readiness and repair workflows, classified the current winning strategy as the `growth` profile, exposed the new API and Overview UI surfaces, reran backend plus frontend verification, and refreshed the docs to match the new operator workflow

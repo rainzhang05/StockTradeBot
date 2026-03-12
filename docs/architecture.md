@@ -123,6 +123,8 @@ API groups and responsibilities:
 
 - `health/setup/config`
   - health status, setup progress, readiness checks, persisted configuration, and environment diagnostics
+- `operator workspace`
+  - aggregated operator workspace payloads, strategy-profile readiness summaries, and resource-repair actions for the planned strategy modes
 - `market-data jobs`
   - universe refreshes, provider jobs, raw ingest status, canonicalization status, and data-quality incidents
 - `models/backtests`

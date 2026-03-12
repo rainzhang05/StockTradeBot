@@ -89,6 +89,7 @@ The UI must not make autonomous mode easier to trigger than manual mode.
 `Overview` must expose at minimum:
 
 - active mode and profile
+- active strategy profile classification when one of the planned strategy modes matches the current config
 - current readiness or attention state
 - daily research readiness and promotion readiness when they differ
 - current freeze status and reason if present
@@ -98,6 +99,8 @@ The UI must not make autonomous mode easier to trigger than manual mode.
 - pending approval count
 - a short readiness summary covering database, market data, fundamentals, and broker state
 - quick actions for backfill, training, backtest, simulation, paper, and live preparation
+- strategy profile readiness across the four planned strategy modes, including explicit empty-state handling for undefined profiles
+- a repair action that can hydrate missing data and rebuild the required resources for all currently defined strategy profiles
 - recent activity in plain language
 
 ## 7. Required Stock Status Elements
