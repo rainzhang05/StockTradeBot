@@ -57,6 +57,7 @@ class _ValidationComputation:
     report_payload: dict[str, Any]
     candidate_model: LinearModelArtifact
     candidate_backtest: _BacktestComputation
+    walk_forward_backtest: _BacktestComputation
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -246,6 +247,114 @@ def _build_backtest_metrics(
     }
 
 
+def _build_backtest_from_events(
+    *,
+    config: AppConfig,
+    dataset_snapshot_id: int,
+    quality_scope: str,
+    benchmark_symbol: str,
+    model_version: str | None,
+    run_id: int,
+    mode: str,
+    trade_count: int,
+    event_rows: Sequence[dict[str, Any]],
+) -> _BacktestComputation:
+    if not event_rows:
+        raise RuntimeError("No backtest events were generated.")
+
+    ordered_rows = sorted(event_rows, key=lambda item: str(item["trade_date"]))
+    nav_history = [config.model_training.initial_capital]
+    daily_returns: list[float] = []
+    benchmark_returns: list[float] = []
+    turnover_values: list[float] = []
+    position_counts: list[int] = []
+    regime_returns: dict[str, list[float]] = defaultdict(list)
+    rebuilt_rows: list[dict[str, Any]] = []
+    current_nav = config.model_training.initial_capital
+
+    for row in ordered_rows:
+        daily_return = float(row["daily_return"])
+        benchmark_daily_return = float(row["benchmark_daily_return"])
+        turnover_ratio = float(row["turnover_ratio"])
+        position_count = int(row["position_count"])
+        regime = str(row["regime"])
+        current_nav *= 1.0 + daily_return
+        nav_history.append(current_nav)
+        daily_returns.append(daily_return)
+        benchmark_returns.append(benchmark_daily_return)
+        turnover_values.append(turnover_ratio)
+        position_counts.append(position_count)
+        regime_returns[regime].append(daily_return)
+        rebuilt_row = dict(row)
+        rebuilt_row["portfolio_nav"] = current_nav
+        rebuilt_rows.append(rebuilt_row)
+
+    metrics = _build_backtest_metrics(
+        nav_history=nav_history,
+        daily_returns=daily_returns,
+        benchmark_returns=benchmark_returns,
+        turnover_values=turnover_values,
+        position_counts=position_counts,
+    )
+    start_date = date.fromisoformat(str(ordered_rows[0]["trade_date"]))
+    end_date = date.fromisoformat(str(ordered_rows[-1]["trade_date"]))
+    regime_summary = {
+        regime: {
+            "days": len(values),
+            "average_daily_return": _mean(values),
+            "compounded_return": (
+                math.prod(1.0 + value for value in values) - 1.0 if values else 0.0
+            ),
+        }
+        for regime, values in sorted(regime_returns.items())
+    }
+    artifact_payload = {
+        "mode": mode,
+        "run_id": run_id,
+        "model_version": model_version,
+        "dataset_snapshot_id": dataset_snapshot_id,
+        "benchmark_symbol": benchmark_symbol,
+        "start_date": _serialize_date(start_date),
+        "end_date": _serialize_date(end_date),
+        "quality_scope": quality_scope,
+        "metrics": metrics,
+        "trade_count": trade_count,
+        "regime_summary": regime_summary,
+        "event_rows": rebuilt_rows,
+        "code_version": __version__,
+    }
+    return _BacktestComputation(
+        summary=BacktestRunSummary(
+            run_id=run_id,
+            model_version=model_version,
+            dataset_snapshot_id=dataset_snapshot_id,
+            mode=mode,
+            start_date=start_date,
+            end_date=end_date,
+            benchmark_symbol=benchmark_symbol,
+            total_return=metrics["total_return"],
+            benchmark_return=metrics["benchmark_return"],
+            excess_return=metrics["excess_return"],
+            annualized_return=metrics["annualized_return"],
+            annualized_volatility=metrics["annualized_volatility"],
+            sharpe_ratio=metrics["sharpe_ratio"],
+            max_drawdown=metrics["max_drawdown"],
+            turnover_ratio=metrics["turnover_ratio"],
+            trade_count=trade_count,
+            average_positions=metrics["average_positions"],
+            artifact_path="",
+            metadata={
+                "regime_summary": regime_summary,
+                "event_count": len(rebuilt_rows),
+                "rebalance_interval_days": config.model_training.rebalance_interval_days,
+            },
+            quality_scope=quality_scope,
+        ),
+        report_payload=artifact_payload,
+        event_rows=rebuilt_rows,
+    )
+
+
 def _nav_and_weights_for_date(
     *,
     cash_balance: float,
@@ -340,12 +449,7 @@ def _run_event_backtest(
     holdings: dict[str, float] = {}
     cash = config.model_training.initial_capital
     nav_history = [config.model_training.initial_capital]
-    daily_returns: list[float] = []
-    benchmark_returns: list[float] = []
-    turnover_values: list[float] = []
-    position_counts: list[int] = []
     event_rows: list[dict[str, Any]] = []
-    regime_returns: dict[str, list[float]] = defaultdict(list)
     trade_count = 0
     curated_etfs = set(resolve_curated_etfs(config))
     rebalance_interval = config.model_training.rebalance_interval_days
@@ -450,9 +554,6 @@ def _run_event_backtest(
         prior_nav = nav_history[-1]
         daily_return = close_nav / prior_nav - 1.0 if prior_nav > 0 else 0.0
         nav_history.append(close_nav)
-        daily_returns.append(daily_return)
-        turnover_values.append(turnover_ratio)
-        position_counts.append(len(holdings))
 
         benchmark_current = bars_by_symbol.get(benchmark_symbol, {}).get(trade_date)
         if index == 0:
@@ -468,9 +569,6 @@ def _run_event_backtest(
                 or benchmark_previous.close == 0
                 else benchmark_current.close / benchmark_previous.close - 1.0
             )
-        benchmark_returns.append(benchmark_daily_return)
-
-        regime_returns[regime].append(daily_return)
         event_rows.append(
             {
                 "trade_date": _serialize_date(trade_date),
@@ -484,69 +582,15 @@ def _run_event_backtest(
                 "rebalanced": rebalance_executed,
             }
         )
-
-    metrics = _build_backtest_metrics(
-        nav_history=nav_history,
-        daily_returns=daily_returns,
-        benchmark_returns=benchmark_returns,
-        turnover_values=turnover_values,
-        position_counts=position_counts,
-    )
-    start_date = evaluation_dates[0]
-    end_date = evaluation_dates[-1]
-    regime_summary = {
-        regime: {
-            "days": len(values),
-            "average_daily_return": _mean(values),
-            "compounded_return": (
-                math.prod(1.0 + value for value in values) - 1.0 if values else 0.0
-            ),
-        }
-        for regime, values in sorted(regime_returns.items())
-    }
-    artifact_payload = {
-        "mode": mode,
-        "run_id": run_id,
-        "model_version": model.version,
-        "dataset_snapshot_id": dataset_snapshot_id,
-        "benchmark_symbol": benchmark_symbol,
-        "start_date": _serialize_date(start_date),
-        "end_date": _serialize_date(end_date),
-        "quality_scope": quality_scope,
-        "metrics": metrics,
-        "trade_count": trade_count,
-        "regime_summary": regime_summary,
-        "event_rows": event_rows,
-        "code_version": __version__,
-    }
-    return _BacktestComputation(
-        summary=BacktestRunSummary(
-            run_id=run_id,
-            model_version=model.version,
-            dataset_snapshot_id=dataset_snapshot_id,
-            mode=mode,
-            start_date=start_date,
-            end_date=end_date,
-            benchmark_symbol=benchmark_symbol,
-            total_return=metrics["total_return"],
-            benchmark_return=metrics["benchmark_return"],
-            excess_return=metrics["excess_return"],
-            annualized_return=metrics["annualized_return"],
-            annualized_volatility=metrics["annualized_volatility"],
-            sharpe_ratio=metrics["sharpe_ratio"],
-            max_drawdown=metrics["max_drawdown"],
-            turnover_ratio=metrics["turnover_ratio"],
-            trade_count=trade_count,
-            average_positions=metrics["average_positions"],
-            artifact_path="",
-            metadata={
-                "regime_summary": regime_summary,
-                "event_count": len(event_rows),
-                "rebalance_interval_days": config.model_training.rebalance_interval_days,
-            },
-            quality_scope=quality_scope,
-        ),
-        report_payload=artifact_payload,
+    return _build_backtest_from_events(
+        config=config,
+        dataset_snapshot_id=dataset_snapshot_id,
+        quality_scope=quality_scope,
+        benchmark_symbol=benchmark_symbol,
+        model_version=model.version,
+        run_id=run_id,
+        mode=mode,
+        trade_count=trade_count,
         event_rows=event_rows,
     )
 
@@ -637,6 +681,8 @@ def _compute_validation(
 
     fold_payloads: list[dict[str, Any]] = []
     fold_summaries: list[BacktestRunSummary] = []
+    walk_forward_event_rows: list[dict[str, Any]] = []
+    walk_forward_trade_count = 0
     latest_model: LinearModelArtifact | None = None
     latest_backtest: _BacktestComputation | None = None
 
@@ -667,6 +713,8 @@ def _compute_validation(
             mode="walk-forward-fold",
         )
         fold_summaries.append(backtest.summary)
+        walk_forward_event_rows.extend(backtest.event_rows)
+        walk_forward_trade_count += backtest.summary.trade_count
         fold_payloads.append(
             {
                 "fold_index": fold_index,
@@ -692,6 +740,17 @@ def _compute_validation(
 
     if latest_model is None or latest_backtest is None:
         raise RuntimeError("Walk-forward validation did not produce a candidate model.")
+    walk_forward_backtest = _build_backtest_from_events(
+        config=config,
+        dataset_snapshot_id=dataset_snapshot.id,
+        quality_scope=dataset_snapshot.quality_scope,
+        benchmark_symbol=config.model_training.benchmark_symbol,
+        model_version=None,
+        run_id=0,
+        mode="walk-forward-validation",
+        trade_count=walk_forward_trade_count,
+        event_rows=walk_forward_event_rows,
+    )
 
     average_total_return = _mean([summary.total_return for summary in fold_summaries])
     average_benchmark_return = _mean([summary.benchmark_return for summary in fold_summaries])
@@ -716,6 +775,22 @@ def _compute_validation(
         "average_excess_return": average_excess_return,
         "latest_fold_total_return": latest_fold_total_return,
         "latest_fold_excess_return": latest_fold_excess_return,
+        "walk_forward": {
+            "start_date": _serialize_date(walk_forward_backtest.summary.start_date),
+            "end_date": _serialize_date(walk_forward_backtest.summary.end_date),
+            "trade_count": walk_forward_backtest.summary.trade_count,
+            "metrics": {
+                "total_return": walk_forward_backtest.summary.total_return,
+                "benchmark_return": walk_forward_backtest.summary.benchmark_return,
+                "excess_return": walk_forward_backtest.summary.excess_return,
+                "annualized_return": walk_forward_backtest.summary.annualized_return,
+                "annualized_volatility": walk_forward_backtest.summary.annualized_volatility,
+                "sharpe_ratio": walk_forward_backtest.summary.sharpe_ratio,
+                "max_drawdown": walk_forward_backtest.summary.max_drawdown,
+                "turnover_ratio": walk_forward_backtest.summary.turnover_ratio,
+                "average_positions": walk_forward_backtest.summary.average_positions,
+            },
+        },
         "promotion_ready": promotion_ready,
         "promotion_reasons": list(promotion_reasons),
         "folds": fold_payloads,
@@ -737,12 +812,14 @@ def _compute_validation(
             metadata={
                 "folds": fold_payloads,
                 "candidate_model_version": latest_model.version,
+                "walk_forward_backtest": walk_forward_backtest.report_payload,
             },
             quality_scope=dataset_snapshot.quality_scope,
         ),
         report_payload=report_payload,
         candidate_model=latest_model,
         candidate_backtest=latest_backtest,
+        walk_forward_backtest=walk_forward_backtest,
     )
 
 
@@ -820,7 +897,7 @@ def train_model(
                 prefix=(
                     f"backtest-{validation.candidate_model.version}-{dataset_snapshot.quality_scope}"
                 ),
-                payload=validation.candidate_backtest.report_payload,
+                payload=validation.walk_forward_backtest.report_payload,
                 config=config,
             )
 
@@ -832,18 +909,18 @@ def train_model(
                 config=config,
             )
             benchmark_metrics = {
-                "benchmark_return": validation.candidate_backtest.summary.benchmark_return,
-                "excess_return": validation.candidate_backtest.summary.excess_return,
+                "benchmark_return": validation.walk_forward_backtest.summary.benchmark_return,
+                "excess_return": validation.walk_forward_backtest.summary.excess_return,
             }
             metrics = {
-                "total_return": validation.candidate_backtest.summary.total_return,
-                "annualized_return": validation.candidate_backtest.summary.annualized_return,
+                "total_return": validation.walk_forward_backtest.summary.total_return,
+                "annualized_return": validation.walk_forward_backtest.summary.annualized_return,
                 "annualized_volatility": (
-                    validation.candidate_backtest.summary.annualized_volatility
+                    validation.walk_forward_backtest.summary.annualized_volatility
                 ),
-                "sharpe_ratio": validation.candidate_backtest.summary.sharpe_ratio,
-                "max_drawdown": validation.candidate_backtest.summary.max_drawdown,
-                "turnover_ratio": validation.candidate_backtest.summary.turnover_ratio,
+                "sharpe_ratio": validation.walk_forward_backtest.summary.sharpe_ratio,
+                "max_drawdown": validation.walk_forward_backtest.summary.max_drawdown,
+                "turnover_ratio": validation.walk_forward_backtest.summary.turnover_ratio,
             }
 
             with Session(engine) as session:
@@ -882,16 +959,16 @@ def train_model(
 
                 backtest_run = BacktestRun(
                     status="completed",
-                    mode="candidate-holdout",
+                    mode="walk-forward-validation",
                     dataset_snapshot_id=dataset_snapshot.id,
                     quality_scope=dataset_snapshot.quality_scope,
                     model_entry_id=model_entry.id,
                     benchmark_symbol=config.model_training.benchmark_symbol,
-                    start_date=validation.candidate_backtest.summary.start_date,
-                    end_date=validation.candidate_backtest.summary.end_date,
+                    start_date=validation.walk_forward_backtest.summary.start_date,
+                    end_date=validation.walk_forward_backtest.summary.end_date,
                     artifact_path=backtest_artifact_path,
                     summary_json=json.dumps(
-                        validation.candidate_backtest.report_payload, sort_keys=True
+                        validation.walk_forward_backtest.report_payload, sort_keys=True
                     ),
                     error_message=None,
                     completed_at=datetime.now(UTC),
@@ -939,6 +1016,7 @@ def train_model(
                         "validation_artifact_path": validation_artifact_path,
                         "backtest_artifact_path": backtest_artifact_path,
                         "fold_count": validation.summary.fold_count,
+                        "candidate_holdout_backtest": validation.candidate_backtest.report_payload,
                     },
                     quality_scope=dataset_snapshot.quality_scope,
                 )

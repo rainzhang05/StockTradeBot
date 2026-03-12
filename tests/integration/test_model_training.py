@@ -37,6 +37,8 @@ def test_train_model_and_backtest_are_reproducible(
     assert training_summary.promotion_status == "research-only"
     assert "paper_trading_history_below_required_30_days" in training_summary.promotion_reasons
     assert (config.app_home / training_summary.artifact_path).exists()
+    status_after_train = model_status(config)
+    assert status_after_train["latest_backtest_run"]["mode"] == "walk-forward-validation"
 
     backtest_summary = backtest_model(config, model_version=training_summary.model_version)
 
