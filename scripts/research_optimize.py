@@ -50,17 +50,27 @@ def main(argv: list[str] | None = None) -> int:
     print(f"isolated_app_home={summary.isolated_app_home}")
     print(f"as_of_date={summary.as_of_date.isoformat()}")
     if best_run is None:
-        print("best_total_return=unavailable")
-        print(f"baseline_total_return={summary.baseline.total_return}")
+        print("best_walk_forward_total_return=unavailable")
+        print(f"baseline_walk_forward_total_return={summary.baseline.total_return}")
         return 1
-    print(f"baseline_total_return={summary.baseline.total_return:.6f}")
-    print(f"best_total_return={best_run.total_return:.6f}")
-    print(f"best_benchmark_return={best_run.benchmark_return:.6f}")
-    print(f"best_excess_return={best_run.excess_return:.6f}")
-    print(f"best_max_drawdown={best_run.max_drawdown:.6f}")
-    print(f"best_turnover_ratio={best_run.turnover_ratio:.6f}")
-    print(f"best_trade_count={best_run.trade_count}")
-    print(f"best_average_positions={best_run.average_positions:.6f}")
+
+    print(f"baseline_walk_forward_total_return={summary.baseline.total_return:.6f}")
+    print(
+        "baseline_walk_forward_excess_return="
+        f"{summary.baseline.walk_forward_excess_return:.6f}"
+    )
+    print(f"baseline_holdout_total_return={summary.baseline.holdout_total_return:.6f}")
+    print(f"baseline_holdout_excess_return={summary.baseline.holdout_excess_return:.6f}")
+    print(f"best_walk_forward_total_return={best_run.total_return:.6f}")
+    print(f"best_walk_forward_benchmark_return={best_run.benchmark_return:.6f}")
+    print(f"best_walk_forward_excess_return={best_run.excess_return:.6f}")
+    print(f"best_holdout_total_return={best_run.holdout_total_return:.6f}")
+    print(f"best_holdout_excess_return={best_run.holdout_excess_return:.6f}")
+    print(f"best_walk_forward_max_drawdown={best_run.max_drawdown:.6f}")
+    print(f"best_walk_forward_turnover_ratio={best_run.turnover_ratio:.6f}")
+    print(f"best_walk_forward_trade_count={best_run.trade_count}")
+    print(f"best_walk_forward_average_positions={best_run.average_positions:.6f}")
+    print(f"source_config_activated={summary.applied_source_config is not None}")
     return 0
 
 

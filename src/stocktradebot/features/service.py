@@ -5,6 +5,7 @@ import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import UTC, date, datetime, time
+from typing import cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -39,114 +40,308 @@ from stocktradebot.storage import (
 CANONICALIZATION_VERSION = "daily-bar-v1"
 TRADING_DAY_DECISION_TIME = time(23, 59, 59, tzinfo=UTC)
 
-FEATURE_SET_DEFINITION: dict[str, object] = {
-    "version": "daily-core-v1",
-    "features": {
-        "momentum_5d": {"formula": "close_t / close_t-5 - 1", "null_policy": "requires 5 bars"},
-        "momentum_20d": {
-            "formula": "close_t / close_t-20 - 1",
-            "null_policy": "requires 20 bars",
+FEATURE_SET_DEFINITIONS: dict[str, dict[str, object]] = {
+    "daily-core-v1": {
+        "version": "daily-core-v1",
+        "features": {
+            "momentum_5d": {
+                "formula": "close_t / close_t-5 - 1",
+                "null_policy": "requires 5 bars",
+            },
+            "momentum_20d": {
+                "formula": "close_t / close_t-20 - 1",
+                "null_policy": "requires 20 bars",
+            },
+            "momentum_60d": {
+                "formula": "close_t / close_t-60 - 1",
+                "null_policy": "requires 60 bars",
+            },
+            "mean_reversion_3d": {
+                "formula": "-1 * (close_t / close_t-3 - 1)",
+                "null_policy": "requires 3 bars",
+            },
+            "realized_vol_20d": {
+                "formula": "stddev(daily_returns_20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "downside_vol_20d": {
+                "formula": "stddev(min(return,0) over 20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "max_drawdown_20d": {
+                "formula": "rolling wealth max drawdown over 20d",
+                "null_policy": "requires 20 bars",
+            },
+            "dollar_volume_20d": {
+                "formula": "mean(close * volume over 20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "volume_ratio_20d": {
+                "formula": "volume_t / mean(volume over 20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "benchmark_relative_20d": {
+                "formula": "symbol_return_20d - benchmark_return_20d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "regime_return_20d": {
+                "formula": "benchmark_return_20d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "regime_vol_20d": {
+                "formula": "benchmark_vol_20d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "cross_sectional_strength_20d": {
+                "formula": "zscore of 20d return within active universe",
+                "null_policy": "requires at least two valid rows on the date",
+            },
+            "sector_relative_20d": {
+                "formula": "symbol_return_20d - sector_mean_return_20d",
+                "null_policy": "null when sector metadata is unavailable",
+            },
+            "earnings_yield": {
+                "formula": "net_income_ttm / market_cap",
+                "null_policy": "null if shares or income unavailable",
+            },
+            "sales_yield": {
+                "formula": "revenue_ttm / market_cap",
+                "null_policy": "null if shares or revenue unavailable",
+            },
+            "book_to_price": {
+                "formula": "shareholders_equity / market_cap",
+                "null_policy": "null if equity or shares unavailable",
+            },
+            "debt_to_equity": {
+                "formula": "total_liabilities / shareholders_equity",
+                "null_policy": "null if equity unavailable",
+            },
+            "asset_growth": {
+                "formula": "(assets_now - assets_prev_year) / abs(assets_prev_year)",
+                "null_policy": "null if prior-year assets unavailable",
+            },
+            "accrual_quality": {
+                "formula": "(net_income_ttm - operating_cash_flow_ttm) / assets",
+                "null_policy": "null if operating cash flow unavailable",
+            },
+            "free_cash_flow_yield": {
+                "formula": "(operating_cash_flow_ttm - abs(capex_ttm)) / market_cap",
+                "null_policy": "null if free cash flow unavailable",
+            },
         },
-        "momentum_60d": {
-            "formula": "close_t / close_t-60 - 1",
-            "null_policy": "requires 60 bars",
-        },
-        "mean_reversion_3d": {
-            "formula": "-1 * (close_t / close_t-3 - 1)",
-            "null_policy": "requires 3 bars",
-        },
-        "realized_vol_20d": {
-            "formula": "stddev(daily_returns_20d)",
-            "null_policy": "requires 20 bars",
-        },
-        "downside_vol_20d": {
-            "formula": "stddev(min(return,0) over 20d)",
-            "null_policy": "requires 20 bars",
-        },
-        "max_drawdown_20d": {
-            "formula": "rolling wealth max drawdown over 20d",
-            "null_policy": "requires 20 bars",
-        },
-        "dollar_volume_20d": {
-            "formula": "mean(close * volume over 20d)",
-            "null_policy": "requires 20 bars",
-        },
-        "volume_ratio_20d": {
-            "formula": "volume_t / mean(volume over 20d)",
-            "null_policy": "requires 20 bars",
-        },
-        "benchmark_relative_20d": {
-            "formula": "symbol_return_20d - benchmark_return_20d",
-            "null_policy": "null if benchmark unavailable",
-        },
-        "regime_return_20d": {
-            "formula": "benchmark_return_20d",
-            "null_policy": "null if benchmark unavailable",
-        },
-        "regime_vol_20d": {
-            "formula": "benchmark_vol_20d",
-            "null_policy": "null if benchmark unavailable",
-        },
-        "cross_sectional_strength_20d": {
-            "formula": "zscore of 20d return within active universe",
-            "null_policy": "requires at least two valid rows on the date",
-        },
-        "sector_relative_20d": {
-            "formula": "symbol_return_20d - sector_median_return_20d",
-            "null_policy": "null when sector metadata is unavailable",
-        },
-        "earnings_yield": {
-            "formula": "net_income_ttm / market_cap",
-            "null_policy": "null if shares or income unavailable",
-        },
-        "sales_yield": {
-            "formula": "revenue_ttm / market_cap",
-            "null_policy": "null if shares or revenue unavailable",
-        },
-        "book_to_price": {
-            "formula": "shareholders_equity / market_cap",
-            "null_policy": "null if equity or shares unavailable",
-        },
-        "debt_to_equity": {
-            "formula": "total_liabilities / shareholders_equity",
-            "null_policy": "null if equity unavailable",
-        },
-        "asset_growth": {
-            "formula": "(assets_now - assets_prev_year) / abs(assets_prev_year)",
-            "null_policy": "null if prior-year assets unavailable",
-        },
-        "accrual_quality": {
-            "formula": "(net_income_ttm - operating_cash_flow_ttm) / assets",
-            "null_policy": "null if operating cash flow unavailable",
-        },
-        "free_cash_flow_yield": {
-            "formula": "(operating_cash_flow_ttm - abs(capex_ttm)) / market_cap",
-            "null_policy": "null if free cash flow unavailable",
+    },
+    "daily-alpha-v2": {
+        "version": "daily-alpha-v2",
+        "features": {
+            "momentum_5d": {
+                "formula": "close_t / close_t-5 - 1",
+                "null_policy": "requires 5 bars",
+            },
+            "momentum_20d": {
+                "formula": "close_t / close_t-20 - 1",
+                "null_policy": "requires 20 bars",
+            },
+            "momentum_60d": {
+                "formula": "close_t / close_t-60 - 1",
+                "null_policy": "requires 60 bars",
+            },
+            "momentum_120d": {
+                "formula": "close_t / close_t-120 - 1",
+                "null_policy": "requires 120 bars",
+            },
+            "momentum_spread_20d_60d": {
+                "formula": "momentum_20d - momentum_60d",
+                "null_policy": "null when either input is unavailable",
+            },
+            "mean_reversion_3d": {
+                "formula": "-1 * (close_t / close_t-3 - 1)",
+                "null_policy": "requires 3 bars",
+            },
+            "realized_vol_20d": {
+                "formula": "stddev(daily_returns_20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "downside_vol_20d": {
+                "formula": "stddev(min(return,0) over 20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "max_drawdown_20d": {
+                "formula": "rolling wealth max drawdown over 20d",
+                "null_policy": "requires 20 bars",
+            },
+            "dollar_volume_20d": {
+                "formula": "mean(close * volume over 20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "volume_ratio_20d": {
+                "formula": "volume_t / mean(volume over 20d)",
+                "null_policy": "requires 20 bars",
+            },
+            "benchmark_relative_20d": {
+                "formula": "symbol_return_20d - benchmark_return_20d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "benchmark_relative_60d": {
+                "formula": "symbol_return_60d - benchmark_return_60d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "regime_return_20d": {
+                "formula": "benchmark_return_20d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "regime_vol_20d": {
+                "formula": "benchmark_vol_20d",
+                "null_policy": "null if benchmark unavailable",
+            },
+            "cross_sectional_strength_20d": {
+                "formula": "zscore of 20d return within active universe",
+                "null_policy": "requires at least two valid rows on the date",
+            },
+            "sector_relative_20d": {
+                "formula": "symbol_return_20d - sector_mean_return_20d",
+                "null_policy": "null when sector metadata is unavailable",
+            },
+            "sector_relative_60d": {
+                "formula": "symbol_return_60d - sector_mean_return_60d",
+                "null_policy": "null when sector metadata is unavailable",
+            },
+            "breakout_distance_60d": {
+                "formula": "close_t / max(high over 60d) - 1",
+                "null_policy": "requires 60 bars",
+            },
+            "volatility_ratio_20d_60d": {
+                "formula": "realized_vol_20d / realized_vol_60d",
+                "null_policy": "null if realized_vol_60d is unavailable or zero",
+            },
+            "dollar_volume_ratio_20d_60d": {
+                "formula": "dollar_volume_20d / dollar_volume_60d",
+                "null_policy": "null if dollar_volume_60d is unavailable or zero",
+            },
+            "earnings_yield": {
+                "formula": "net_income_ttm / market_cap",
+                "null_policy": "null if shares or income unavailable",
+            },
+            "sales_yield": {
+                "formula": "revenue_ttm / market_cap",
+                "null_policy": "null if shares or revenue unavailable",
+            },
+            "book_to_price": {
+                "formula": "shareholders_equity / market_cap",
+                "null_policy": "null if equity or shares unavailable",
+            },
+            "debt_to_equity": {
+                "formula": "total_liabilities / shareholders_equity",
+                "null_policy": "null if equity unavailable",
+            },
+            "asset_growth": {
+                "formula": "(assets_now - assets_prev_year) / abs(assets_prev_year)",
+                "null_policy": "null if prior-year assets unavailable",
+            },
+            "accrual_quality": {
+                "formula": "(net_income_ttm - operating_cash_flow_ttm) / assets",
+                "null_policy": "null if operating cash flow unavailable",
+            },
+            "free_cash_flow_yield": {
+                "formula": "(operating_cash_flow_ttm - abs(capex_ttm)) / market_cap",
+                "null_policy": "null if free cash flow unavailable",
+            },
         },
     },
 }
 
-LABEL_SET_DEFINITION: dict[str, object] = {
-    "version": "forward-return-v1",
-    "labels": {
-        "ranking_label_5d": {
-            "formula": "zscore of 5-trading-day forward total return within active universe",
-            "null_policy": "requires future 5 verified bars",
+LABEL_SET_DEFINITIONS: dict[str, dict[str, object]] = {
+    "forward-return-v1": {
+        "version": "forward-return-v1",
+        "labels": {
+            "ranking_label_5d": {
+                "formula": "zscore of 5-trading-day forward total return within active universe",
+                "null_policy": "requires future 5 bars in the selected quality scope",
+            },
+            "forward_return_5d": {
+                "formula": "5-trading-day forward total return",
+                "null_policy": "requires future 5 bars in the selected quality scope",
+            },
+            "forward_return_10d": {
+                "formula": "10-trading-day forward total return",
+                "null_policy": "requires future 10 bars in the selected quality scope",
+            },
+            "forward_max_drawdown_10d": {
+                "formula": "minimum drawdown on the 10-trading-day forward wealth path",
+                "null_policy": "requires future 10 bars in the selected quality scope",
+            },
         },
-        "forward_return_5d": {
-            "formula": "5-trading-day forward total return",
-            "null_policy": "requires future 5 verified bars",
-        },
-        "forward_return_10d": {
-            "formula": "10-trading-day forward total return",
-            "null_policy": "requires future 10 verified bars",
-        },
-        "forward_max_drawdown_10d": {
-            "formula": "minimum drawdown on the 10-trading-day forward wealth path",
-            "null_policy": "requires future 10 verified bars",
+    },
+    "forward-excess-v2": {
+        "version": "forward-excess-v2",
+        "labels": {
+            "ranking_label_5d_excess": {
+                "formula": (
+                    "zscore of 5-trading-day forward excess return versus benchmark within "
+                    "active universe"
+                ),
+                "null_policy": "requires future 5 benchmark bars in the selected quality scope",
+            },
+            "forward_return_5d": {
+                "formula": "5-trading-day forward total return",
+                "null_policy": "requires future 5 bars in the selected quality scope",
+            },
+            "forward_return_10d": {
+                "formula": "10-trading-day forward total return",
+                "null_policy": "requires future 10 bars in the selected quality scope",
+            },
+            "forward_excess_return_5d": {
+                "formula": "forward_return_5d - benchmark_forward_return_5d",
+                "null_policy": "requires future 5 benchmark bars in the selected quality scope",
+            },
+            "forward_excess_return_10d": {
+                "formula": "forward_return_10d - benchmark_forward_return_10d",
+                "null_policy": "requires future 10 benchmark bars in the selected quality scope",
+            },
+            "forward_max_drawdown_10d": {
+                "formula": "minimum drawdown on the 10-trading-day forward wealth path",
+                "null_policy": "requires future 10 bars in the selected quality scope",
+            },
         },
     },
 }
+
+FEATURE_SET_MIN_HISTORY_DAYS = {
+    "daily-core-v1": 60,
+    "daily-alpha-v2": 120,
+}
+
+
+def _feature_set_definition(version: str) -> dict[str, object]:
+    try:
+        return FEATURE_SET_DEFINITIONS[version]
+    except KeyError as exc:
+        raise RuntimeError(f"Unsupported feature set version '{version}'.") from exc
+
+
+def _label_set_definition(version: str) -> dict[str, object]:
+    try:
+        return LABEL_SET_DEFINITIONS[version]
+    except KeyError as exc:
+        raise RuntimeError(f"Unsupported label version '{version}'.") from exc
+
+
+def _feature_names_for_version(version: str) -> tuple[str, ...]:
+    definition = _feature_set_definition(version)
+    feature_definition = cast(dict[str, object], definition["features"])
+    return tuple(feature_definition.keys())
+
+
+def _label_names_for_version(version: str) -> tuple[str, ...]:
+    definition = _label_set_definition(version)
+    label_definition = cast(dict[str, object], definition["labels"])
+    return tuple(label_definition.keys())
+
+
+def _required_feature_history_days(version: str) -> int:
+    try:
+        return FEATURE_SET_MIN_HISTORY_DAYS[version]
+    except KeyError as exc:
+        raise RuntimeError(f"Unsupported feature set version '{version}'.") from exc
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -548,7 +743,7 @@ def _persist_feature_set(session: Session, version: str) -> None:
         session.add(
             FeatureSetVersion(
                 version=version,
-                definition_json=json.dumps(FEATURE_SET_DEFINITION, sort_keys=True),
+                definition_json=json.dumps(_feature_set_definition(version), sort_keys=True),
             )
         )
 
@@ -558,7 +753,7 @@ def _persist_label_version(session: Session, version: str) -> None:
         session.add(
             LabelVersion(
                 version=version,
-                definition_json=json.dumps(LABEL_SET_DEFINITION, sort_keys=True),
+                definition_json=json.dumps(_label_set_definition(version), sort_keys=True),
             )
         )
 
@@ -588,13 +783,28 @@ def build_dataset_snapshot(
     as_of_date: date | None = None,
     quality_scope: str | None = None,
 ) -> DatasetSnapshotSummary:
+    max_forward_label_horizon_days = 10
     effective_as_of_date = as_of_date or datetime.now(UTC).date()
     effective_quality_scope = normalize_quality_scope(
         quality_scope or config.model_training.quality_scope
     )
-    start_date = date.fromordinal(
+    feature_set_version = config.model_training.feature_set_version
+    label_version = config.model_training.label_version
+    selected_feature_names = _feature_names_for_version(feature_set_version)
+    selected_label_names = _label_names_for_version(label_version)
+    effective_min_feature_history_days = max(
+        config.model_training.min_feature_history_days,
+        _required_feature_history_days(feature_set_version),
+    )
+    row_start_date = date.fromordinal(
         effective_as_of_date.toordinal() - config.model_training.dataset_lookback_days
     )
+    data_start_date = date.fromordinal(
+        row_start_date.toordinal()
+        - effective_min_feature_history_days
+        - max_forward_label_horizon_days
+    )
+    requires_momentum_120d = "momentum_120d" in selected_feature_names
 
     engine = create_db_engine(config)
     try:
@@ -611,7 +821,7 @@ def build_dataset_snapshot(
             bars = _load_canonical_bars(
                 session,
                 symbols=all_symbols,
-                start_date=start_date,
+                start_date=data_start_date,
                 end_date=effective_as_of_date,
                 quality_scope=effective_quality_scope,
             )
@@ -623,7 +833,7 @@ def build_dataset_snapshot(
             actions = _load_corporate_actions(
                 session,
                 symbols=all_symbols,
-                start_date=start_date,
+                start_date=data_start_date,
                 end_date=effective_as_of_date,
             )
             fundamental_observations = _load_fundamentals(session, symbols=all_symbols)
@@ -653,7 +863,7 @@ def build_dataset_snapshot(
                 fundamentals_by_symbol[observation.symbol].append(observation)
 
             benchmark_bars = bars_by_symbol.get(benchmark_symbol, [])
-            benchmark_returns = {
+            benchmark_returns_20d = {
                 bar.trade_date: (
                     None
                     if index < 20
@@ -661,17 +871,40 @@ def build_dataset_snapshot(
                 )
                 for index, bar in enumerate(benchmark_bars)
             }
-            benchmark_vol: dict[date, float | None] = {}
+            benchmark_returns_60d = {
+                bar.trade_date: (
+                    None
+                    if index < 60
+                    else benchmark_bars[index].close / benchmark_bars[index - 60].close - 1.0
+                )
+                for index, bar in enumerate(benchmark_bars)
+            }
+            benchmark_vol_20d: dict[date, float | None] = {}
+            benchmark_forward_return_5d: dict[date, float | None] = {}
+            benchmark_forward_return_10d: dict[date, float | None] = {}
+            benchmark_actions = actions_by_symbol[benchmark_symbol]
             for index, bar in enumerate(benchmark_bars):
                 if index < 20:
-                    benchmark_vol[bar.trade_date] = None
-                    continue
-                window = benchmark_bars[index - 19 : index + 1]
-                returns = [
-                    _bar_return(window[current].close, window[current + 1].close)
-                    for current in range(len(window) - 1)
-                ]
-                benchmark_vol[bar.trade_date] = _stddev(returns)
+                    benchmark_vol_20d[bar.trade_date] = None
+                else:
+                    window_20 = benchmark_bars[index - 19 : index + 1]
+                    returns_20 = [
+                        _bar_return(window_20[current].close, window_20[current + 1].close)
+                        for current in range(len(window_20) - 1)
+                    ]
+                    benchmark_vol_20d[bar.trade_date] = _stddev(returns_20)
+                benchmark_forward_return_5d[bar.trade_date] = _forward_total_return(
+                    benchmark_bars,
+                    benchmark_actions,
+                    index,
+                    5,
+                )
+                benchmark_forward_return_10d[bar.trade_date] = _forward_total_return(
+                    benchmark_bars,
+                    benchmark_actions,
+                    index,
+                    10,
+                )
 
             feature_rows: list[FeatureRowRecord] = []
             label_rows: list[LabelRowRecord] = []
@@ -683,7 +916,9 @@ def build_dataset_snapshot(
                 for index, bar in enumerate(symbol_bars):
                     if bar.trade_date > effective_as_of_date:
                         continue
-                    if index < config.model_training.min_feature_history_days:
+                    if bar.trade_date < row_start_date:
+                        continue
+                    if index < effective_min_feature_history_days:
                         continue
 
                     universe_snapshot_id, active_symbols = _snapshot_for_trade_date(
@@ -696,12 +931,21 @@ def build_dataset_snapshot(
                     window_3 = symbol_bars[index - 3 : index + 1]
                     window_20 = symbol_bars[index - 20 : index + 1]
                     window_60 = symbol_bars[index - 60 : index + 1]
+                    window_120: list[CanonicalBarRecord] = (
+                        symbol_bars[index - 120 : index + 1] if requires_momentum_120d else []
+                    )
                     if len(window_60) < 61 or len(window_20) < 21 or len(window_3) < 4:
+                        continue
+                    if requires_momentum_120d and len(window_120) < 121:
                         continue
 
                     returns_20 = [
                         _bar_return(window_20[current].close, window_20[current + 1].close)
                         for current in range(len(window_20) - 1)
+                    ]
+                    returns_60 = [
+                        _bar_return(window_60[current].close, window_60[current + 1].close)
+                        for current in range(len(window_60) - 1)
                     ]
                     negative_returns_20 = [
                         min(current_return, 0.0) for current_return in returns_20
@@ -717,13 +961,27 @@ def build_dataset_snapshot(
                         trade_date=bar.trade_date,
                         close=bar.close,
                     )
-                    benchmark_return_20d = benchmark_returns.get(bar.trade_date)
-                    benchmark_vol_20d = benchmark_vol.get(bar.trade_date)
+                    benchmark_return_20d = benchmark_returns_20d.get(bar.trade_date)
+                    benchmark_return_60d = benchmark_returns_60d.get(bar.trade_date)
+                    benchmark_volatility_20d = benchmark_vol_20d.get(bar.trade_date)
                     symbol_return_20d = bar.close / window_20[0].close - 1.0
+                    symbol_return_60d = bar.close / window_60[0].close - 1.0
+                    realized_volatility_20d = _stddev(returns_20)
+                    realized_volatility_60d = _stddev(returns_60)
+                    dollar_volume_20d = _mean(
+                        [current_bar.close * current_bar.volume for current_bar in window_20]
+                    )
+                    dollar_volume_60d = _mean(
+                        [current_bar.close * current_bar.volume for current_bar in window_60]
+                    )
+                    momentum_120d_value: float | None = None
+                    if requires_momentum_120d:
+                        assert len(window_120) >= 121
+                        momentum_120d_value = bar.close / window_120[0].close - 1.0
 
                     feature_rows.append(
                         FeatureRowRecord(
-                            feature_set_version=config.model_training.feature_set_version,
+                            feature_set_version=feature_set_version,
                             symbol=symbol,
                             trade_date=bar.trade_date,
                             universe_snapshot_id=universe_snapshot_id,
@@ -731,16 +989,13 @@ def build_dataset_snapshot(
                                 "momentum_5d": bar.close / symbol_bars[index - 5].close - 1.0,
                                 "momentum_20d": symbol_return_20d,
                                 "momentum_60d": bar.close / window_60[0].close - 1.0,
+                                "momentum_120d": momentum_120d_value,
+                                "momentum_spread_20d_60d": symbol_return_20d - symbol_return_60d,
                                 "mean_reversion_3d": -(bar.close / window_3[0].close - 1.0),
-                                "realized_vol_20d": _stddev(returns_20),
+                                "realized_vol_20d": realized_volatility_20d,
                                 "downside_vol_20d": _stddev(negative_returns_20),
                                 "max_drawdown_20d": worst_drawdown,
-                                "dollar_volume_20d": _mean(
-                                    [
-                                        current_bar.close * current_bar.volume
-                                        for current_bar in window_20
-                                    ]
-                                ),
+                                "dollar_volume_20d": dollar_volume_20d,
                                 "volume_ratio_20d": bar.volume
                                 / _mean([current_bar.volume for current_bar in window_20]),
                                 "benchmark_relative_20d": (
@@ -748,10 +1003,28 @@ def build_dataset_snapshot(
                                     if benchmark_return_20d is None
                                     else symbol_return_20d - benchmark_return_20d
                                 ),
+                                "benchmark_relative_60d": (
+                                    None
+                                    if benchmark_return_60d is None
+                                    else symbol_return_60d - benchmark_return_60d
+                                ),
                                 "regime_return_20d": benchmark_return_20d,
-                                "regime_vol_20d": benchmark_vol_20d,
+                                "regime_vol_20d": benchmark_volatility_20d,
                                 "cross_sectional_strength_20d": None,
                                 "sector_relative_20d": None,
+                                "sector_relative_60d": None,
+                                "breakout_distance_60d": (
+                                    bar.close / max(current_bar.high for current_bar in window_60)
+                                    - 1.0
+                                ),
+                                "volatility_ratio_20d_60d": _safe_ratio(
+                                    realized_volatility_20d,
+                                    realized_volatility_60d,
+                                ),
+                                "dollar_volume_ratio_20d_60d": _safe_ratio(
+                                    dollar_volume_20d,
+                                    dollar_volume_60d,
+                                ),
                                 **fundamental_ratios,
                             },
                             fundamentals_available_at=fundamentals_available_at,
@@ -776,21 +1049,38 @@ def build_dataset_snapshot(
                         index,
                         10,
                     )
+                    benchmark_5d = benchmark_forward_return_5d.get(bar.trade_date)
+                    benchmark_10d = benchmark_forward_return_10d.get(bar.trade_date)
                     if (
                         forward_return_5d is None
                         or forward_return_10d is None
                         or forward_max_drawdown_10d is None
+                        or (
+                            label_version == "forward-excess-v2"
+                            and (benchmark_5d is None or benchmark_10d is None)
+                        )
                     ):
                         continue
                     label_rows.append(
                         LabelRowRecord(
-                            label_version=config.model_training.label_version,
+                            label_version=label_version,
                             symbol=symbol,
                             trade_date=bar.trade_date,
                             values={
                                 "ranking_label_5d": None,
+                                "ranking_label_5d_excess": None,
                                 "forward_return_5d": forward_return_5d,
                                 "forward_return_10d": forward_return_10d,
+                                "forward_excess_return_5d": (
+                                    None
+                                    if benchmark_5d is None
+                                    else forward_return_5d - benchmark_5d
+                                ),
+                                "forward_excess_return_10d": (
+                                    None
+                                    if benchmark_10d is None
+                                    else forward_return_10d - benchmark_10d
+                                ),
                                 "forward_max_drawdown_10d": forward_max_drawdown_10d,
                             },
                         )
@@ -822,25 +1112,38 @@ def build_dataset_snapshot(
                 strength_mean = _mean(strength_values) if strength_values else 0.0
                 strength_std = _stddev(strength_values) if strength_values else 0.0
                 sector_returns: dict[str, list[float]] = defaultdict(list)
+                sector_returns_60d: dict[str, list[float]] = defaultdict(list)
                 for row in rows_for_date:
                     sector = symbol_sectors.get(row.symbol)
                     momentum_20d = row.values["momentum_20d"]
+                    momentum_60d = row.values.get("momentum_60d")
                     if sector is not None and momentum_20d is not None:
                         sector_returns[sector].append(float(momentum_20d))
+                    if sector is not None and momentum_60d is not None:
+                        sector_returns_60d[sector].append(float(momentum_60d))
 
                 label_candidates: list[float] = []
+                label_excess_candidates: list[float] = []
                 for row in rows_for_date:
                     forward_return = labels_by_key[(row.symbol, row.trade_date)].values[
                         "forward_return_5d"
                     ]
                     if forward_return is not None:
                         label_candidates.append(float(forward_return))
+                    forward_excess_return = labels_by_key[(row.symbol, row.trade_date)].values.get(
+                        "forward_excess_return_5d"
+                    )
+                    if forward_excess_return is not None:
+                        label_excess_candidates.append(float(forward_excess_return))
                 label_mean = _mean(label_candidates)
                 label_std = _stddev(label_candidates)
+                label_excess_mean = _mean(label_excess_candidates)
+                label_excess_std = _stddev(label_excess_candidates)
 
                 for row in rows_for_date:
                     row_values = dict(row.values)
                     momentum_20d = row_values["momentum_20d"]
+                    momentum_60d = row_values.get("momentum_60d")
                     sector = symbol_sectors.get(row.symbol)
                     if momentum_20d is not None and strength_std > 0:
                         row_values["cross_sectional_strength_20d"] = (
@@ -857,13 +1160,25 @@ def build_dataset_snapshot(
                         )
                     else:
                         row_values["sector_relative_20d"] = None
+                    if sector is not None and momentum_60d is not None:
+                        peer_returns_60d = sector_returns_60d.get(sector, [])
+                        row_values["sector_relative_60d"] = (
+                            float(momentum_60d) - _mean(peer_returns_60d)
+                            if peer_returns_60d
+                            else None
+                        )
+                    else:
+                        row_values["sector_relative_60d"] = None
+                    selected_feature_values = {
+                        key: row_values.get(key) for key in selected_feature_names
+                    }
                     updated_feature_rows.append(
                         FeatureRowRecord(
                             feature_set_version=row.feature_set_version,
                             symbol=row.symbol,
                             trade_date=row.trade_date,
                             universe_snapshot_id=row.universe_snapshot_id,
-                            values=row_values,
+                            values=selected_feature_values,
                             fundamentals_available_at=row.fundamentals_available_at,
                         )
                     )
@@ -875,12 +1190,28 @@ def build_dataset_snapshot(
                     label_values["ranking_label_5d"] = (
                         0.0 if label_std == 0 else (raw_5d - label_mean) / label_std
                     )
+                    raw_excess_5d_value = label_values.get("forward_excess_return_5d")
+                    raw_excess_5d = (
+                        None if raw_excess_5d_value is None else float(raw_excess_5d_value)
+                    )
+                    label_values["ranking_label_5d_excess"] = (
+                        None
+                        if raw_excess_5d is None
+                        else (
+                            0.0
+                            if label_excess_std == 0
+                            else (raw_excess_5d - label_excess_mean) / label_excess_std
+                        )
+                    )
+                    selected_label_values = {
+                        key: label_values.get(key) for key in selected_label_names
+                    }
                     updated_label_rows.append(
                         LabelRowRecord(
                             label_version=current_label_row.label_version,
                             symbol=current_label_row.symbol,
                             trade_date=current_label_row.trade_date,
-                            values=label_values,
+                            values=selected_label_values,
                         )
                     )
 
@@ -915,8 +1246,8 @@ def build_dataset_snapshot(
                     }
                 )
 
-            _persist_feature_set(session, config.model_training.feature_set_version)
-            _persist_label_version(session, config.model_training.label_version)
+            _persist_feature_set(session, feature_set_version)
+            _persist_label_version(session, label_version)
             session.flush()
 
             for row in updated_feature_rows:
@@ -944,16 +1275,16 @@ def build_dataset_snapshot(
                 config,
                 as_of_date=effective_as_of_date,
                 quality_scope=effective_quality_scope,
-                feature_set_version=config.model_training.feature_set_version,
-                label_version=config.model_training.label_version,
+                feature_set_version=feature_set_version,
+                label_version=label_version,
                 rows=artifact_rows,
             )
             latest_snapshot_id, _ = _snapshot_for_trade_date(snapshots, effective_as_of_date)
             dataset_snapshot = DatasetSnapshot(
                 as_of_date=effective_as_of_date,
                 universe_snapshot_id=latest_snapshot_id,
-                feature_set_version=config.model_training.feature_set_version,
-                label_version=config.model_training.label_version,
+                feature_set_version=feature_set_version,
+                label_version=label_version,
                 canonicalization_version=CANONICALIZATION_VERSION,
                 quality_scope=effective_quality_scope,
                 generation_code_version=__version__,
@@ -964,7 +1295,8 @@ def build_dataset_snapshot(
                 ),
                 metadata_json=json.dumps(
                     {
-                        "start_date": start_date.isoformat(),
+                        "data_start_date": data_start_date.isoformat(),
+                        "row_start_date": row_start_date.isoformat(),
                         "benchmark_symbol": benchmark_symbol,
                         "symbol_count": len({symbol for symbol, _ in final_keys}),
                     },
@@ -979,14 +1311,15 @@ def build_dataset_snapshot(
                 snapshot_id=dataset_snapshot.id,
                 as_of_date=effective_as_of_date,
                 universe_snapshot_id=latest_snapshot_id,
-                feature_set_version=config.model_training.feature_set_version,
-                label_version=config.model_training.label_version,
+                feature_set_version=feature_set_version,
+                label_version=label_version,
                 quality_scope=effective_quality_scope,
                 row_count=len(artifact_rows),
                 null_statistics=dict(sorted(null_statistics.items())),
                 artifact_path=artifact_path,
                 metadata={
-                    "start_date": start_date.isoformat(),
+                    "data_start_date": data_start_date.isoformat(),
+                    "row_start_date": row_start_date.isoformat(),
                     "benchmark_symbol": benchmark_symbol,
                     "symbol_count": len({symbol for symbol, _ in final_keys}),
                 },

@@ -161,7 +161,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
     config.save()
     initialize_database(config)
 
-    start_date = date(2025, 12, 1)
+    start_date = date(2025, 9, 1)
     primary = FakePriceProvider(
         "stooq",
         bars_by_symbol={
@@ -169,7 +169,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
                 "stooq",
                 "AAPL",
                 start_date=start_date,
-                days=120,
+                days=240,
                 starting_close=100.0,
                 daily_step=0.6,
             ),
@@ -177,7 +177,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
                 "stooq",
                 "MSFT",
                 start_date=start_date,
-                days=120,
+                days=240,
                 starting_close=200.0,
                 daily_step=0.4,
             ),
@@ -185,7 +185,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
                 "stooq",
                 "SPY",
                 start_date=start_date,
-                days=120,
+                days=240,
                 starting_close=500.0,
                 daily_step=0.3,
             ),
@@ -198,7 +198,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
                 "alpha_vantage",
                 "AAPL",
                 start_date=start_date,
-                days=120,
+                days=240,
                 starting_close=100.0,
                 daily_step=0.6,
                 multiplier=1.0005,
@@ -207,7 +207,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
                 "alpha_vantage",
                 "MSFT",
                 start_date=start_date,
-                days=120,
+                days=240,
                 starting_close=200.0,
                 daily_step=0.4,
                 multiplier=1.0004,
@@ -216,7 +216,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
                 "alpha_vantage",
                 "SPY",
                 start_date=start_date,
-                days=120,
+                days=240,
                 starting_close=500.0,
                 daily_step=0.3,
                 multiplier=1.0002,
@@ -230,7 +230,7 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
     backfill_market_data(
         config,
         as_of_date=date(2026, 2, 1),
-        lookback_days=80,
+        lookback_days=160,
         symbols=["AAPL", "MSFT", "SPY"],
         providers=[primary, secondary],
         fundamentals_provider=fundamentals_provider,
@@ -287,6 +287,28 @@ def test_build_dataset_snapshot_is_reproducible_and_availability_aware(
         row["symbol"] in {"AAPL", "MSFT"} and row["features"]["sector_relative_20d"] is not None
         for row in rows
     )
+
+    config.model_training.feature_set_version = "daily-alpha-v2"
+    config.model_training.label_version = "forward-excess-v2"
+    config.model_training.target_label_name = "ranking_label_5d_excess"
+    config.save()
+
+    alpha_dataset = build_dataset_snapshot(config, as_of_date=date(2026, 3, 20))
+    alpha_rows = [
+        json.loads(line)
+        for line in (config.app_home / alpha_dataset.artifact_path)
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+
+    assert alpha_dataset.feature_set_version == "daily-alpha-v2"
+    assert alpha_dataset.label_version == "forward-excess-v2"
+    assert alpha_rows
+    assert "momentum_120d" in alpha_rows[0]["features"]
+    assert "sector_relative_60d" in alpha_rows[0]["features"]
+    assert "ranking_label_5d_excess" in alpha_rows[0]["labels"]
+    assert "forward_excess_return_5d" in alpha_rows[0]["labels"]
 
 
 def test_provisional_only_daily_data_supports_research_scope_but_blocks_promotion_scope(
