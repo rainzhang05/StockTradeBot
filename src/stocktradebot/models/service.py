@@ -14,8 +14,14 @@ from sqlalchemy.orm import Session
 
 from stocktradebot import __version__
 from stocktradebot.config import AppConfig
+from stocktradebot.data.universe import resolve_curated_etfs
 from stocktradebot.features import build_dataset_snapshot
-from stocktradebot.models.baseline import fit_linear_correlation_model, score_features
+from stocktradebot.models.baseline import (
+    deserialize_model_artifact,
+    fit_model_artifact,
+    rank_rows,
+    serialize_model_artifact,
+)
 from stocktradebot.models.types import (
     BacktestRunSummary,
     DatasetArtifactRow,
@@ -23,6 +29,7 @@ from stocktradebot.models.types import (
     TrainingRunSummary,
     ValidationRunSummary,
 )
+from stocktradebot.portfolio import PortfolioCandidate, construct_target_portfolio
 from stocktradebot.storage import (
     BacktestRun,
     CanonicalDailyBar,
@@ -50,13 +57,6 @@ class _ValidationComputation:
     report_payload: dict[str, Any]
     candidate_model: LinearModelArtifact
     candidate_backtest: _BacktestComputation
-
-
-@dataclass(slots=True, frozen=True)
-class _CandidateScore:
-    symbol: str
-    score: float
-    regime: str
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -145,15 +145,19 @@ def _load_dataset_rows(
     return rows
 
 
-def _execution_date_lookup(
-    bars_by_symbol: dict[str, dict[date, CanonicalDailyBar]],
-    benchmark_symbol: str,
-) -> list[date]:
-    benchmark_dates = bars_by_symbol.get(benchmark_symbol)
-    if benchmark_dates:
-        return sorted(benchmark_dates)
-    all_dates = {trade_date for rows in bars_by_symbol.values() for trade_date in rows}
-    return sorted(all_dates)
+def _allowed_validation_tiers(quality_scope: str) -> tuple[str, ...]:
+    return ("verified",) if quality_scope == "promotion" else ("verified", "provisional")
+
+
+def _execution_symbols(
+    config: AppConfig,
+    rows: Sequence[DatasetArtifactRow],
+) -> list[str]:
+    symbols = {row.symbol for row in rows}
+    symbols.add(config.model_training.benchmark_symbol)
+    if config.portfolio.defensive_etf_symbol:
+        symbols.add(config.portfolio.defensive_etf_symbol)
+    return sorted(symbols)
 
 
 def _load_execution_bars(
@@ -162,13 +166,15 @@ def _load_execution_bars(
     symbols: Sequence[str],
     start_date: date,
     end_date: date,
+    quality_scope: str,
 ) -> dict[str, dict[date, CanonicalDailyBar]]:
+    allowed_tiers = _allowed_validation_tiers(quality_scope)
     rows = session.scalars(
         select(CanonicalDailyBar).where(
             CanonicalDailyBar.symbol.in_(tuple(symbols)),
             CanonicalDailyBar.trade_date >= start_date,
             CanonicalDailyBar.trade_date <= end_date,
-            CanonicalDailyBar.validation_tier == "verified",
+            CanonicalDailyBar.validation_tier.in_(allowed_tiers),
         )
     ).all()
     bars_by_symbol: dict[str, dict[date, CanonicalDailyBar]] = defaultdict(dict)
@@ -240,25 +246,98 @@ def _build_backtest_metrics(
     }
 
 
+def _nav_and_weights_for_date(
+    *,
+    cash_balance: float,
+    holdings: dict[str, float],
+    bars_by_symbol: dict[str, dict[date, CanonicalDailyBar]],
+    trade_date: date,
+) -> tuple[float, dict[str, float]]:
+    nav = cash_balance
+    values: dict[str, float] = {}
+    for symbol, shares in holdings.items():
+        bar = bars_by_symbol.get(symbol, {}).get(trade_date)
+        if bar is None:
+            continue
+        values[symbol] = shares * bar.close
+        nav += values[symbol]
+    if nav <= 0:
+        return nav, {}
+    return nav, {symbol: value / nav for symbol, value in values.items()}
+
+
+def _apply_order_plans(
+    *,
+    config: AppConfig,
+    order_plans: Sequence[Any],
+    holdings: dict[str, float],
+    cash_balance: float,
+    trade_date: date,
+    bars_by_symbol: dict[str, dict[date, CanonicalDailyBar]],
+) -> tuple[dict[str, float], float, int]:
+    updated_holdings = dict(holdings)
+    updated_cash = cash_balance
+    filled_order_count = 0
+    for order_plan in order_plans:
+        bar = bars_by_symbol.get(order_plan.symbol, {}).get(trade_date)
+        if bar is None:
+            continue
+        max_fill_notional = abs(order_plan.requested_notional)
+        if config.execution.partial_fill_enabled:
+            max_fill_notional = min(
+                abs(order_plan.requested_notional),
+                bar.close * bar.volume * config.execution.max_participation_rate,
+            )
+        fill_ratio = (
+            0.0
+            if abs(order_plan.requested_notional) < 1e-9
+            else max_fill_notional / abs(order_plan.requested_notional)
+        )
+        fill_ratio = max(0.0, min(fill_ratio, 1.0))
+        filled_shares = order_plan.requested_shares * fill_ratio
+        if filled_shares <= 1e-9:
+            continue
+        executed_price = bar.close * (
+            1.0
+            + (1.0 if order_plan.side == "buy" else -1.0)
+            * order_plan.expected_slippage_bps
+            / 10_000
+        )
+        commission = filled_shares * executed_price * config.execution.commission_bps / 10_000
+        signed_delta = filled_shares if order_plan.side == "buy" else -filled_shares
+        if order_plan.side == "buy":
+            updated_cash -= filled_shares * executed_price + commission
+        else:
+            updated_cash += filled_shares * executed_price - commission
+        updated_holdings[order_plan.symbol] = (
+            updated_holdings.get(order_plan.symbol, 0.0) + signed_delta
+        )
+        if abs(updated_holdings[order_plan.symbol]) <= 1e-9:
+            updated_holdings.pop(order_plan.symbol, None)
+        filled_order_count += 1
+    return updated_holdings, updated_cash, filled_order_count
+
+
 def _run_event_backtest(
     *,
     config: AppConfig,
     dataset_snapshot_id: int,
+    quality_scope: str,
     model: LinearModelArtifact,
     benchmark_symbol: str,
     rows: Sequence[DatasetArtifactRow],
     bars_by_symbol: dict[str, dict[date, CanonicalDailyBar]],
-    market_dates: Sequence[date],
     run_id: int,
     mode: str,
 ) -> _BacktestComputation:
+    from stocktradebot.execution.service import _build_order_plans
+
     rows_by_date = _group_rows_by_date(rows)
     evaluation_dates = sorted(rows_by_date)
-    next_market_date = {
-        market_dates[index]: market_dates[index + 1] for index in range(len(market_dates) - 1)
-    }
+    if not evaluation_dates:
+        raise RuntimeError("No dataset rows are available for backtesting.")
 
-    positions: dict[str, float] = {}
+    holdings: dict[str, float] = {}
     cash = config.model_training.initial_capital
     nav_history = [config.model_training.initial_capital]
     daily_returns: list[float] = []
@@ -268,114 +347,141 @@ def _run_event_backtest(
     event_rows: list[dict[str, Any]] = []
     regime_returns: dict[str, list[float]] = defaultdict(list)
     trade_count = 0
+    curated_etfs = set(resolve_curated_etfs(config))
+    rebalance_interval = config.model_training.rebalance_interval_days
 
-    for trade_date in evaluation_dates:
-        execution_date = next_market_date.get(trade_date)
-        if execution_date is None:
-            continue
-
-        candidates = [
+    for index, trade_date in enumerate(evaluation_dates):
+        visible_rows = [
             row
             for row in rows_by_date[trade_date]
-            if execution_date in bars_by_symbol.get(row.symbol, {})
+            if trade_date in bars_by_symbol.get(row.symbol, {})
         ]
-        if not candidates:
-            continue
-
-        scored_candidates = sorted(
-            (
-                _CandidateScore(
-                    symbol=row.symbol,
-                    score=score_features(model, row.features),
-                    regime=_classify_regime(row),
-                )
-                for row in candidates
-            ),
-            key=lambda candidate: (candidate.score, candidate.symbol),
-            reverse=True,
+        start_nav, current_weights = _nav_and_weights_for_date(
+            cash_balance=cash,
+            holdings=holdings,
+            bars_by_symbol=bars_by_symbol,
+            trade_date=trade_date,
         )
-        selected_candidates = scored_candidates[: config.model_training.target_portfolio_size]
-        target_weights = (
-            {candidate.symbol: 1.0 / len(selected_candidates) for candidate in selected_candidates}
-            if selected_candidates
-            else {}
-        )
+        regime = "unknown"
+        selected_symbols: list[str] = []
+        turnover_ratio = 0.0
+        rebalance_executed = False
 
-        current_nav_at_open = cash
-        current_prices: dict[str, float] = {}
-        for symbol, shares in positions.items():
-            execution_bar = bars_by_symbol.get(symbol, {}).get(execution_date)
-            if execution_bar is None:
-                continue
-            current_prices[symbol] = execution_bar.open
-            current_nav_at_open += shares * execution_bar.open
-
-        traded_notional = 0.0
-        all_symbols = set(positions) | set(target_weights)
-        for symbol in sorted(all_symbols):
-            execution_bar = bars_by_symbol.get(symbol, {}).get(execution_date)
-            if execution_bar is None:
-                continue
-
-            open_price = execution_bar.open
-            current_shares = positions.get(symbol, 0.0)
-            current_notional = current_shares * open_price
-            target_notional = current_nav_at_open * target_weights.get(symbol, 0.0)
-            trade_notional = target_notional - current_notional
-            if abs(trade_notional) < 1e-9:
-                continue
-
-            direction = 1.0 if trade_notional > 0 else -1.0
-            impacted_price = open_price * (
-                1.0 + direction * config.model_training.slippage_bps / 10_000
+        if visible_rows and index % rebalance_interval == 0:
+            ranked_rows = sorted(
+                rank_rows(model, visible_rows),
+                key=lambda item: (item[1], item[0].symbol),
+                reverse=True,
             )
-            share_delta = trade_notional / impacted_price
-            commission = abs(trade_notional) * config.model_training.commission_bps / 10_000
+            candidate_map = {
+                row.symbol: PortfolioCandidate(
+                    symbol=row.symbol,
+                    score=score,
+                    price=bars_by_symbol[row.symbol][trade_date].close,
+                    asset_type="etf" if row.symbol in curated_etfs else "stock",
+                    realized_vol_20d=row.features.get("realized_vol_20d"),
+                    dollar_volume_20d=row.features.get("dollar_volume_20d"),
+                    regime_return_20d=row.features.get("regime_return_20d"),
+                    regime_vol_20d=row.features.get("regime_vol_20d"),
+                )
+                for row, score in ranked_rows
+            }
+            defensive_symbol = config.portfolio.defensive_etf_symbol
+            if (
+                defensive_symbol
+                and defensive_symbol in bars_by_symbol
+                and trade_date in bars_by_symbol[defensive_symbol]
+            ):
+                if defensive_symbol not in candidate_map:
+                    reference_row = visible_rows[0]
+                    defensive_bar = bars_by_symbol[defensive_symbol][trade_date]
+                    candidate_map[defensive_symbol] = PortfolioCandidate(
+                        symbol=defensive_symbol,
+                        score=0.01,
+                        price=defensive_bar.close,
+                        asset_type="etf",
+                        realized_vol_20d=None,
+                        dollar_volume_20d=float(defensive_bar.close * defensive_bar.volume),
+                        regime_return_20d=reference_row.features.get("regime_return_20d"),
+                        regime_vol_20d=reference_row.features.get("regime_vol_20d"),
+                    )
 
-            cash -= share_delta * impacted_price + commission
-            positions[symbol] = current_shares + share_delta
-            traded_notional += abs(trade_notional)
-            trade_count += 1
+            target_portfolio = construct_target_portfolio(
+                config,
+                candidates=list(candidate_map.values()),
+                current_weights=current_weights,
+            )
+            target_weights = {
+                position.symbol: position.target_weight for position in target_portfolio.positions
+            }
+            rebalance_bars = {
+                symbol: bar_by_date[trade_date]
+                for symbol, bar_by_date in bars_by_symbol.items()
+                if trade_date in bar_by_date and (symbol in target_weights or symbol in holdings)
+            }
+            order_plans = _build_order_plans(
+                config,
+                start_nav=start_nav,
+                current_holdings=holdings,
+                target_weights=target_weights,
+                bars=rebalance_bars,
+                candidate_map=candidate_map,
+            )
+            holdings, cash, filled_order_count = _apply_order_plans(
+                config=config,
+                order_plans=order_plans,
+                holdings=holdings,
+                cash_balance=cash,
+                trade_date=trade_date,
+                bars_by_symbol=bars_by_symbol,
+            )
+            trade_count += filled_order_count
+            regime = target_portfolio.regime
+            selected_symbols = [position.symbol for position in target_portfolio.positions]
+            turnover_ratio = target_portfolio.turnover_ratio
+            rebalance_executed = True
 
-        positions = {symbol: shares for symbol, shares in positions.items() if abs(shares) > 1e-10}
-        close_nav = cash
-        for symbol, shares in positions.items():
-            execution_bar = bars_by_symbol.get(symbol, {}).get(execution_date)
-            if execution_bar is None:
-                continue
-            close_nav += shares * execution_bar.close
-
+        close_nav, _end_weights = _nav_and_weights_for_date(
+            cash_balance=cash,
+            holdings=holdings,
+            bars_by_symbol=bars_by_symbol,
+            trade_date=trade_date,
+        )
         prior_nav = nav_history[-1]
         daily_return = close_nav / prior_nav - 1.0 if prior_nav > 0 else 0.0
         nav_history.append(close_nav)
         daily_returns.append(daily_return)
-        turnover_values.append(
-            0.0 if current_nav_at_open <= 0 else traded_notional / current_nav_at_open
-        )
-        position_counts.append(len(positions))
+        turnover_values.append(turnover_ratio)
+        position_counts.append(len(holdings))
 
         benchmark_current = bars_by_symbol.get(benchmark_symbol, {}).get(trade_date)
-        benchmark_next = bars_by_symbol.get(benchmark_symbol, {}).get(execution_date)
-        benchmark_daily_return = (
-            0.0
-            if benchmark_current is None or benchmark_next is None or benchmark_current.close == 0
-            else benchmark_next.close / benchmark_current.close - 1.0
-        )
+        if index == 0:
+            benchmark_daily_return = 0.0
+        else:
+            benchmark_previous = bars_by_symbol.get(benchmark_symbol, {}).get(
+                evaluation_dates[index - 1]
+            )
+            benchmark_daily_return = (
+                0.0
+                if benchmark_previous is None
+                or benchmark_current is None
+                or benchmark_previous.close == 0
+                else benchmark_current.close / benchmark_previous.close - 1.0
+            )
         benchmark_returns.append(benchmark_daily_return)
 
-        regime = selected_candidates[0].regime if selected_candidates else "unknown"
         regime_returns[regime].append(daily_return)
         event_rows.append(
             {
                 "trade_date": _serialize_date(trade_date),
-                "execution_date": _serialize_date(execution_date),
-                "selected_symbols": [candidate.symbol for candidate in selected_candidates],
+                "selected_symbols": selected_symbols,
                 "portfolio_nav": close_nav,
                 "daily_return": daily_return,
                 "benchmark_daily_return": benchmark_daily_return,
-                "turnover_ratio": turnover_values[-1],
-                "position_count": len(positions),
+                "turnover_ratio": turnover_ratio,
+                "position_count": len(holdings),
                 "regime": regime,
+                "rebalanced": rebalance_executed,
             }
         )
 
@@ -387,9 +493,7 @@ def _run_event_backtest(
         position_counts=position_counts,
     )
     start_date = evaluation_dates[0]
-    end_date = (
-        event_rows and date.fromisoformat(event_rows[-1]["execution_date"]) or evaluation_dates[-1]
-    )
+    end_date = evaluation_dates[-1]
     regime_summary = {
         regime: {
             "days": len(values),
@@ -408,7 +512,9 @@ def _run_event_backtest(
         "benchmark_symbol": benchmark_symbol,
         "start_date": _serialize_date(start_date),
         "end_date": _serialize_date(end_date),
+        "quality_scope": quality_scope,
         "metrics": metrics,
+        "trade_count": trade_count,
         "regime_summary": regime_summary,
         "event_rows": event_rows,
         "code_version": __version__,
@@ -436,7 +542,9 @@ def _run_event_backtest(
             metadata={
                 "regime_summary": regime_summary,
                 "event_count": len(event_rows),
+                "rebalance_interval_days": config.model_training.rebalance_interval_days,
             },
+            quality_scope=quality_scope,
         ),
         report_payload=artifact_payload,
         event_rows=event_rows,
@@ -467,12 +575,15 @@ def _build_walk_forward_folds(
 
 def _promotion_reasons(
     *,
+    quality_scope: str,
     fold_count: int,
     latest_excess_return: float,
     paper_safe_days: int,
     config: AppConfig,
 ) -> tuple[bool, tuple[str, ...], str]:
     reasons: list[str] = []
+    if quality_scope != "promotion":
+        reasons.append("research_scope_models_are_not_promotable")
     if fold_count < config.model_training.min_validation_folds:
         reasons.append("insufficient_walk_forward_history")
     if latest_excess_return <= 0:
@@ -500,38 +611,11 @@ def _paper_safe_day_count(session: Session) -> int:
 
 
 def _model_artifact_payload(model: LinearModelArtifact) -> dict[str, Any]:
-    payload = asdict(model)
-    payload["training_start_date"] = _serialize_date(model.training_start_date)
-    payload["training_end_date"] = _serialize_date(model.training_end_date)
-    payload["holdout_start_date"] = _serialize_date(model.holdout_start_date)
-    payload["holdout_end_date"] = _serialize_date(model.holdout_end_date)
-    return payload
+    return serialize_model_artifact(model)
 
 
 def _model_from_payload(payload: dict[str, Any]) -> LinearModelArtifact:
-    return LinearModelArtifact(
-        version=str(payload["version"]),
-        family=str(payload["family"]),
-        dataset_snapshot_id=int(payload["dataset_snapshot_id"]),
-        feature_set_version=str(payload["feature_set_version"]),
-        label_version=str(payload["label_version"]),
-        label_name=str(payload["label_name"]),
-        feature_names=tuple(str(name) for name in payload["feature_names"]),
-        feature_means={key: float(value) for key, value in dict(payload["feature_means"]).items()},
-        feature_stds={key: float(value) for key, value in dict(payload["feature_stds"]).items()},
-        feature_imputes={
-            key: float(value) for key, value in dict(payload["feature_imputes"]).items()
-        },
-        feature_weights={
-            key: float(value) for key, value in dict(payload["feature_weights"]).items()
-        },
-        training_start_date=date.fromisoformat(payload["training_start_date"]),
-        training_end_date=date.fromisoformat(payload["training_end_date"]),
-        training_row_count=int(payload["training_row_count"]),
-        holdout_start_date=date.fromisoformat(payload["holdout_start_date"]),
-        holdout_end_date=date.fromisoformat(payload["holdout_end_date"]),
-        metadata=dict(payload.get("metadata", {})),
-    )
+    return deserialize_model_artifact(payload)
 
 
 def _load_model_artifact(config: AppConfig, artifact_path: str) -> LinearModelArtifact:
@@ -551,7 +635,6 @@ def _compute_validation(
     if not folds:
         raise RuntimeError("No walk-forward folds are available. Expand the dataset history first.")
 
-    market_dates = _execution_date_lookup(bars_by_symbol, config.model_training.benchmark_symbol)
     fold_payloads: list[dict[str, Any]] = []
     fold_summaries: list[BacktestRunSummary] = []
     latest_model: LinearModelArtifact | None = None
@@ -561,7 +644,7 @@ def _compute_validation(
         test_dates = sorted({row.trade_date for row in test_rows})
         if not test_dates:
             continue
-        model = fit_linear_correlation_model(
+        model = fit_model_artifact(
             rows=train_rows,
             dataset_snapshot_id=dataset_snapshot.id,
             feature_set_version=dataset_snapshot.feature_set_version,
@@ -575,11 +658,11 @@ def _compute_validation(
         backtest = _run_event_backtest(
             config=config,
             dataset_snapshot_id=dataset_snapshot.id,
+            quality_scope=dataset_snapshot.quality_scope,
             model=model,
             benchmark_symbol=config.model_training.benchmark_symbol,
             rows=test_rows,
             bars_by_symbol=bars_by_symbol,
-            market_dates=market_dates,
             run_id=fold_index,
             mode="walk-forward-fold",
         )
@@ -616,6 +699,7 @@ def _compute_validation(
     latest_fold_total_return = fold_summaries[-1].total_return
     latest_fold_excess_return = fold_summaries[-1].excess_return
     promotion_ready, promotion_reasons, _promotion_status = _promotion_reasons(
+        quality_scope=dataset_snapshot.quality_scope,
         fold_count=len(fold_summaries),
         latest_excess_return=latest_fold_excess_return,
         paper_safe_days=paper_safe_days,
@@ -625,6 +709,7 @@ def _compute_validation(
         "dataset_snapshot_id": dataset_snapshot.id,
         "feature_set_version": dataset_snapshot.feature_set_version,
         "label_version": dataset_snapshot.label_version,
+        "quality_scope": dataset_snapshot.quality_scope,
         "fold_count": len(fold_summaries),
         "average_total_return": average_total_return,
         "average_benchmark_return": average_benchmark_return,
@@ -653,6 +738,7 @@ def _compute_validation(
                 "folds": fold_payloads,
                 "candidate_model_version": latest_model.version,
             },
+            quality_scope=dataset_snapshot.quality_scope,
         ),
         report_payload=report_payload,
         candidate_model=latest_model,
@@ -664,6 +750,7 @@ def train_model(
     config: AppConfig,
     *,
     as_of_date: date | None = None,
+    quality_scope: str | None = None,
 ) -> TrainingRunSummary:
     effective_as_of_date = as_of_date or datetime.now(UTC).date()
     engine = create_db_engine(config)
@@ -682,7 +769,11 @@ def train_model(
             training_run_id = training_run.id
 
         try:
-            dataset_summary = build_dataset_snapshot(config, as_of_date=effective_as_of_date)
+            dataset_summary = build_dataset_snapshot(
+                config,
+                as_of_date=effective_as_of_date,
+                quality_scope=quality_scope,
+            )
             with Session(engine) as session:
                 current_training_run = session.get(ModelTrainingRun, training_run_id)
                 if current_training_run is None:
@@ -698,14 +789,10 @@ def train_model(
             with Session(engine) as session:
                 bars_by_symbol = _load_execution_bars(
                     session,
-                    symbols=sorted(
-                        {
-                            *(row.symbol for row in dataset_rows),
-                            config.model_training.benchmark_symbol,
-                        }
-                    ),
+                    symbols=_execution_symbols(config, dataset_rows),
                     start_date=min(row.trade_date for row in dataset_rows),
                     end_date=max(row.trade_date for row in dataset_rows) + timedelta(days=7),
+                    quality_scope=dataset_snapshot.quality_scope,
                 )
                 paper_safe_days = _paper_safe_day_count(session)
 
@@ -718,24 +805,27 @@ def train_model(
             )
             validation_artifact_path = _write_json_artifact(
                 config.report_artifacts_dir,
-                prefix=f"validation-{dataset_snapshot.id}",
+                prefix=f"validation-{dataset_snapshot.id}-{dataset_snapshot.quality_scope}",
                 payload=validation.report_payload,
                 config=config,
             )
             model_artifact_path = _write_json_artifact(
                 config.model_artifacts_dir,
-                prefix=f"model-{validation.candidate_model.version}",
+                prefix=f"model-{validation.candidate_model.version}-{dataset_snapshot.quality_scope}",
                 payload=_model_artifact_payload(validation.candidate_model),
                 config=config,
             )
             backtest_artifact_path = _write_json_artifact(
                 config.report_artifacts_dir,
-                prefix=f"backtest-{validation.candidate_model.version}",
+                prefix=(
+                    f"backtest-{validation.candidate_model.version}-{dataset_snapshot.quality_scope}"
+                ),
                 payload=validation.candidate_backtest.report_payload,
                 config=config,
             )
 
             promotion_ready, promotion_reasons, promotion_status = _promotion_reasons(
+                quality_scope=dataset_snapshot.quality_scope,
                 fold_count=validation.summary.fold_count,
                 latest_excess_return=validation.summary.latest_fold_excess_return,
                 paper_safe_days=paper_safe_days,
@@ -760,6 +850,7 @@ def train_model(
                 validation_run = ValidationRun(
                     status="completed",
                     dataset_snapshot_id=dataset_snapshot.id,
+                    quality_scope=dataset_snapshot.quality_scope,
                     model_entry_id=None,
                     fold_count=validation.summary.fold_count,
                     artifact_path=validation_artifact_path,
@@ -774,6 +865,7 @@ def train_model(
                     version=validation.candidate_model.version,
                     family=validation.candidate_model.family,
                     dataset_snapshot_id=dataset_snapshot.id,
+                    quality_scope=dataset_snapshot.quality_scope,
                     feature_set_version=dataset_snapshot.feature_set_version,
                     label_version=dataset_snapshot.label_version,
                     training_start_date=validation.candidate_model.training_start_date,
@@ -792,6 +884,7 @@ def train_model(
                     status="completed",
                     mode="candidate-holdout",
                     dataset_snapshot_id=dataset_snapshot.id,
+                    quality_scope=dataset_snapshot.quality_scope,
                     model_entry_id=model_entry.id,
                     benchmark_symbol=config.model_training.benchmark_symbol,
                     start_date=validation.candidate_backtest.summary.start_date,
@@ -819,6 +912,7 @@ def train_model(
                         "backtest_run_id": backtest_run.id,
                         "metrics": metrics,
                         "benchmark_metrics": benchmark_metrics,
+                        "quality_scope": dataset_snapshot.quality_scope,
                         "promotion_status": promotion_status,
                         "promotion_reasons": list(promotion_reasons),
                     },
@@ -846,6 +940,7 @@ def train_model(
                         "backtest_artifact_path": backtest_artifact_path,
                         "fold_count": validation.summary.fold_count,
                     },
+                    quality_scope=dataset_snapshot.quality_scope,
                 )
         except Exception as exc:
             with Session(engine) as session:
@@ -881,6 +976,7 @@ def backtest_model(
                 raise RuntimeError("No trained model is available. Run train first.")
             dataset_snapshot = _load_dataset_snapshot_row(session, model_entry.dataset_snapshot_id)
             dataset_snapshot_id = dataset_snapshot.id
+            model_quality_scope = model_entry.quality_scope
             model = _load_model_artifact(config, model_entry.artifact_path)
             dataset_rows = [
                 row
@@ -893,6 +989,7 @@ def backtest_model(
                 status="running",
                 mode="static-model",
                 dataset_snapshot_id=dataset_snapshot.id,
+                quality_scope=model_quality_scope,
                 model_entry_id=model_entry.id,
                 benchmark_symbol=config.model_training.benchmark_symbol,
                 start_date=model.holdout_start_date,
@@ -909,32 +1006,25 @@ def backtest_model(
             with Session(engine) as session:
                 bars_by_symbol = _load_execution_bars(
                     session,
-                    symbols=sorted(
-                        {
-                            *(row.symbol for row in dataset_rows),
-                            config.model_training.benchmark_symbol,
-                        }
-                    ),
+                    symbols=_execution_symbols(config, dataset_rows),
                     start_date=model.holdout_start_date,
                     end_date=model.holdout_end_date + timedelta(days=7),
+                    quality_scope=model_quality_scope,
                 )
-            market_dates = _execution_date_lookup(
-                bars_by_symbol, config.model_training.benchmark_symbol
-            )
             backtest = _run_event_backtest(
                 config=config,
                 dataset_snapshot_id=dataset_snapshot_id,
+                quality_scope=model_quality_scope,
                 model=model,
                 benchmark_symbol=config.model_training.benchmark_symbol,
                 rows=dataset_rows,
                 bars_by_symbol=bars_by_symbol,
-                market_dates=market_dates,
                 run_id=backtest_run_id,
                 mode="static-model",
             )
             artifact_path = _write_json_artifact(
                 config.report_artifacts_dir,
-                prefix=f"backtest-{model.version}",
+                prefix=f"backtest-{model.version}-{model_quality_scope}",
                 payload=backtest.report_payload,
                 config=config,
             )
@@ -1019,6 +1109,7 @@ def model_status(config: AppConfig) -> dict[str, object]:
                 "version": latest_model.version,
                 "family": latest_model.family,
                 "dataset_snapshot_id": latest_model.dataset_snapshot_id,
+                "quality_scope": latest_model.quality_scope,
                 "feature_set_version": latest_model.feature_set_version,
                 "label_version": latest_model.label_version,
                 "training_start_date": _serialize_date(latest_model.training_start_date),
@@ -1039,6 +1130,7 @@ def model_status(config: AppConfig) -> dict[str, object]:
                 "id": latest_validation_run.id,
                 "status": latest_validation_run.status,
                 "dataset_snapshot_id": latest_validation_run.dataset_snapshot_id,
+                "quality_scope": latest_validation_run.quality_scope,
                 "model_entry_id": latest_validation_run.model_entry_id,
                 "fold_count": latest_validation_run.fold_count,
                 "artifact_path": latest_validation_run.artifact_path,
@@ -1056,6 +1148,7 @@ def model_status(config: AppConfig) -> dict[str, object]:
                 "status": latest_backtest_run.status,
                 "mode": latest_backtest_run.mode,
                 "dataset_snapshot_id": latest_backtest_run.dataset_snapshot_id,
+                "quality_scope": latest_backtest_run.quality_scope,
                 "model_entry_id": latest_backtest_run.model_entry_id,
                 "benchmark_symbol": latest_backtest_run.benchmark_symbol,
                 "start_date": _serialize_date(latest_backtest_run.start_date),

@@ -41,6 +41,9 @@ class LinearModelArtifact:
     training_row_count: int
     holdout_start_date: date
     holdout_end_date: date
+    serialized_model: str | None = None
+    serialized_format: str | None = None
+    component_payloads: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -65,6 +68,7 @@ class BacktestRunSummary:
     average_positions: float
     artifact_path: str
     metadata: dict[str, Any]
+    quality_scope: str = "promotion"
     frequency: str = "daily"
 
 
@@ -82,6 +86,7 @@ class ValidationRunSummary:
     promotion_ready: bool
     promotion_reasons: tuple[str, ...]
     metadata: dict[str, Any]
+    quality_scope: str = "promotion"
     frequency: str = "daily"
 
 
@@ -101,6 +106,7 @@ class TrainingRunSummary:
     metrics: dict[str, float]
     benchmark_metrics: dict[str, float]
     metadata: dict[str, Any]
+    quality_scope: str = "promotion"
     frequency: str = "daily"
 
 

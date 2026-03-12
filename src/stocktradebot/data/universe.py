@@ -10,7 +10,11 @@ from stocktradebot.data.models import (
     UniverseSelectionRecord,
     UniverseSnapshotRecord,
 )
-from stocktradebot.data.seeds import DEFAULT_CURATED_ETFS, DEFAULT_STOCK_CANDIDATES
+from stocktradebot.data.seeds import (
+    DEFAULT_CURATED_ETFS,
+    DEFAULT_STOCK_CANDIDATES,
+    DEFAULT_SYMBOL_SECTORS,
+)
 
 
 def resolve_stock_candidates(config: AppConfig) -> tuple[str, ...]:
@@ -19,6 +23,14 @@ def resolve_stock_candidates(config: AppConfig) -> tuple[str, ...]:
 
 def resolve_curated_etfs(config: AppConfig) -> tuple[str, ...]:
     return tuple(config.universe.curated_etfs or DEFAULT_CURATED_ETFS)
+
+
+def resolve_symbol_sectors(config: AppConfig) -> dict[str, str]:
+    merged = dict(DEFAULT_SYMBOL_SECTORS)
+    merged.update(
+        {symbol.upper(): sector for symbol, sector in config.portfolio.symbol_sectors.items()}
+    )
+    return merged
 
 
 def build_universe_snapshot(

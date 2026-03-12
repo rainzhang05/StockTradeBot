@@ -18,6 +18,7 @@ from stocktradebot.broker import (
 )
 from stocktradebot.broker.types import BrokerAccountSnapshotData, BrokerPositionData
 from stocktradebot.config import AppConfig
+from stocktradebot.data.universe import resolve_curated_etfs, resolve_symbol_sectors
 from stocktradebot.execution.types import (
     ApprovalSummary,
     FillSummary,
@@ -28,7 +29,7 @@ from stocktradebot.execution.types import (
     TradingOperationSummary,
 )
 from stocktradebot.features import build_dataset_snapshot
-from stocktradebot.models.baseline import score_features
+from stocktradebot.models.baseline import deserialize_model_artifact, rank_rows
 from stocktradebot.models.types import DatasetArtifactRow, LinearModelArtifact
 from stocktradebot.portfolio import PortfolioCandidate, construct_target_portfolio
 from stocktradebot.risk import FillRiskInput, evaluate_posttrade_risk, evaluate_pretrade_risk
@@ -133,29 +134,7 @@ def _write_json_artifact(
 
 
 def _model_from_payload(payload: dict[str, Any]) -> LinearModelArtifact:
-    return LinearModelArtifact(
-        version=str(payload["version"]),
-        family=str(payload["family"]),
-        dataset_snapshot_id=int(payload["dataset_snapshot_id"]),
-        feature_set_version=str(payload["feature_set_version"]),
-        label_version=str(payload["label_version"]),
-        label_name=str(payload["label_name"]),
-        feature_names=tuple(str(name) for name in payload["feature_names"]),
-        feature_means={key: float(value) for key, value in dict(payload["feature_means"]).items()},
-        feature_stds={key: float(value) for key, value in dict(payload["feature_stds"]).items()},
-        feature_imputes={
-            key: float(value) for key, value in dict(payload["feature_imputes"]).items()
-        },
-        feature_weights={
-            key: float(value) for key, value in dict(payload["feature_weights"]).items()
-        },
-        training_start_date=date.fromisoformat(payload["training_start_date"]),
-        training_end_date=date.fromisoformat(payload["training_end_date"]),
-        training_row_count=int(payload["training_row_count"]),
-        holdout_start_date=date.fromisoformat(payload["holdout_start_date"]),
-        holdout_end_date=date.fromisoformat(payload["holdout_end_date"]),
-        metadata=dict(payload.get("metadata", {})),
-    )
+    return deserialize_model_artifact(payload)
 
 
 def _load_model_artifact(config: AppConfig, artifact_path: str) -> LinearModelArtifact:
@@ -313,7 +292,7 @@ def _latest_transition(session: Session) -> ModeTransitionEvent | None:
 
 
 def _sector_for_symbol(config: AppConfig, symbol: str) -> str | None:
-    return config.portfolio.symbol_sectors.get(symbol)
+    return resolve_symbol_sectors(config).get(symbol)
 
 
 def _expected_spread_bps(
@@ -745,18 +724,13 @@ def _build_execution_plan(
     candidate_symbols.update(current_weights)
 
     bars = _load_price_bars(session, symbols=sorted(candidate_symbols), trade_date=decision_date)
+    ranked_rows = rank_rows(model, latest_rows)
     scored_rows: list[_ScoredRow] = []
-    for row in latest_rows:
+    for row, score in ranked_rows:
         bar = bars.get(row.symbol)
         if bar is None:
             continue
-        scored_rows.append(
-            _ScoredRow(
-                row=row,
-                bar=bar,
-                score=score_features(model, row.features),
-            )
-        )
+        scored_rows.append(_ScoredRow(row=row, bar=bar, score=score))
     if not scored_rows:
         raise RuntimeError("No verified prices are available for the latest decision date.")
 
@@ -765,7 +739,7 @@ def _build_execution_plan(
             symbol=item.row.symbol,
             score=item.score,
             price=item.bar.close,
-            asset_type="etf" if item.row.symbol in set(config.universe.curated_etfs) else "stock",
+            asset_type="etf" if item.row.symbol in set(resolve_curated_etfs(config)) else "stock",
             realized_vol_20d=item.row.features.get("realized_vol_20d"),
             dollar_volume_20d=item.row.features.get("dollar_volume_20d"),
             regime_return_20d=item.row.features.get("regime_return_20d"),

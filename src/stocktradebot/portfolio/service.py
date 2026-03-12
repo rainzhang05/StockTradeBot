@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from stocktradebot.config import AppConfig
+from stocktradebot.data.universe import resolve_symbol_sectors
 
 
 @dataclass(slots=True, frozen=True)
@@ -71,7 +72,7 @@ def _regime_targets(config: AppConfig, regime: str) -> tuple[int, float]:
 
 
 def _sector_for_symbol(config: AppConfig, symbol: str) -> str:
-    return config.portfolio.symbol_sectors.get(symbol, f"UNMAPPED:{symbol}")
+    return resolve_symbol_sectors(config).get(symbol, f"UNMAPPED:{symbol}")
 
 
 def _allocate_with_caps(
