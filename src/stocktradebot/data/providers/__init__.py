@@ -14,6 +14,7 @@ from stocktradebot.data.providers.base import (
 )
 from stocktradebot.data.providers.sec import SecCompanyFactsProvider
 from stocktradebot.data.providers.stooq import StooqDailyHistoryProvider
+from stocktradebot.data.providers.yahoo import YahooDailyHistoryProvider
 
 
 def build_provider_registry(config: AppConfig) -> dict[str, DailyHistoryProvider]:
@@ -38,6 +39,13 @@ def build_provider_registry(config: AppConfig) -> dict[str, DailyHistoryProvider
             base_url=alpha_vantage_config.base_url,
             timeout_seconds=alpha_vantage_config.timeout_seconds,
             api_key=alpha_vantage_key,
+        )
+
+    yahoo_config = provider_map["yahoo"]
+    if yahoo_config.enabled:
+        registry["yahoo"] = YahooDailyHistoryProvider(
+            base_url=yahoo_config.base_url,
+            timeout_seconds=yahoo_config.timeout_seconds,
         )
 
     return registry

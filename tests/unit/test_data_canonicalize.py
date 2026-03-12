@@ -105,3 +105,40 @@ def test_canonicalize_quarantines_mismatched_bars() -> None:
     assert canonical_bars[0].validation_tier == "quarantined"
     assert len(incidents) == 1
     assert incidents[0].affected_fields == ("close",)
+
+
+def test_canonicalize_keeps_yahoo_only_agreement_provisional_when_primary_is_missing() -> None:
+    observations = [
+        DailyBarRecord(
+            provider="alpha_vantage",
+            symbol="AAPL",
+            trade_date=date(2026, 3, 6),
+            open=100.0,
+            high=101.0,
+            low=99.5,
+            close=100.5,
+            volume=1_000_000,
+        ),
+        DailyBarRecord(
+            provider="yahoo",
+            symbol="AAPL",
+            trade_date=date(2026, 3, 6),
+            open=100.02,
+            high=101.02,
+            low=99.48,
+            close=100.48,
+            volume=1_010_000,
+        ),
+    ]
+
+    canonical_bars, incidents = canonicalize_daily_bars(
+        observations,
+        primary_provider="stooq",
+        secondary_provider="alpha_vantage",
+        thresholds=ValidationThresholds(),
+    )
+
+    assert len(canonical_bars) == 1
+    assert canonical_bars[0].primary_provider == "alpha_vantage"
+    assert canonical_bars[0].validation_tier == "provisional"
+    assert incidents == []

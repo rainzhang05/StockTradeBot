@@ -84,6 +84,7 @@ def canonicalize_daily_bars(
         )
         if primary_bar is None:
             continue
+        primary_provider_observation = provider_bars.get(primary_provider)
 
         field_provenance = {
             field_name: primary_bar.provider for field_name in (*PRICE_FIELDS, "volume")
@@ -129,7 +130,7 @@ def canonicalize_daily_bars(
                 confirming_bar = candidate
                 break
 
-        if confirming_bar is not None:
+        if confirming_bar is not None and primary_provider_observation is not None:
             canonical_bars.append(
                 CanonicalBarRecord(
                     symbol=symbol,
@@ -147,7 +148,9 @@ def canonicalize_daily_bars(
             )
             continue
 
-        validation_tier = "provisional" if not comparison_candidates else "quarantined"
+        validation_tier = "provisional"
+        if comparison_candidates and confirming_bar is None:
+            validation_tier = "quarantined"
         canonical_bars.append(
             CanonicalBarRecord(
                 symbol=symbol,
@@ -164,7 +167,7 @@ def canonicalize_daily_bars(
             )
         )
 
-        if comparison_candidates:
+        if comparison_candidates and confirming_bar is None:
             incidents.append(
                 DataQualityIncidentRecord(
                     symbol=symbol,

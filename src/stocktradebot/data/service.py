@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 
@@ -80,18 +80,25 @@ def _fundamentals_symbol_set(config: AppConfig, symbols: Sequence[str]) -> tuple
     return tuple(symbol for symbol in _normalize_symbols(symbols) if symbol not in curated_etfs)
 
 
+def _resolve_provider_registry(
+    config: AppConfig,
+    *,
+    providers: Sequence[DailyHistoryProvider] | None,
+) -> dict[str, DailyHistoryProvider]:
+    if providers is not None:
+        return {provider.name: provider for provider in providers}
+    return build_provider_registry(config)
+
+
 def _resolve_provider_list(
     config: AppConfig,
     *,
     providers: Sequence[DailyHistoryProvider] | None,
     primary_provider: str | None,
     secondary_provider: str | None,
-) -> tuple[tuple[DailyHistoryProvider, ...], str, str | None]:
-    if providers is not None:
-        provider_map = {provider.name: provider for provider in providers}
-    else:
-        provider_map = build_provider_registry(config)
-
+    research_fallback_providers: Sequence[str] | None = None,
+) -> tuple[tuple[DailyHistoryProvider, ...], str, str | None, tuple[str, ...]]:
+    provider_map = _resolve_provider_registry(config, providers=providers)
     primary_name = primary_provider or config.data_providers.primary_provider
     secondary_name = secondary_provider or config.data_providers.secondary_provider
     if primary_name not in provider_map:
@@ -103,7 +110,23 @@ def _resolve_provider_list(
         selected_providers.append(provider_map[secondary_name])
         resolved_secondary_name = secondary_name
 
-    return tuple(selected_providers), primary_name, resolved_secondary_name
+    configured_fallbacks = research_fallback_providers
+    if configured_fallbacks is None:
+        configured_fallbacks = config.data_providers.research_fallback_providers
+    resolved_fallback_names = tuple(
+        provider_name
+        for provider_name in configured_fallbacks
+        if provider_name in provider_map
+        and provider_name not in {primary_name, resolved_secondary_name}
+    )
+    selected_providers.extend(provider_map[name] for name in resolved_fallback_names)
+
+    return (
+        tuple(selected_providers),
+        primary_name,
+        resolved_secondary_name,
+        resolved_fallback_names,
+    )
 
 
 def _resolve_intraday_provider_list(
@@ -498,6 +521,131 @@ def _backfill_start_date(
     return as_of_date - timedelta(days=max(lookback_days * 2, 45))
 
 
+def _payload_trade_dates(payload: ProviderHistoryPayload | None) -> tuple[date, ...]:
+    if payload is None:
+        return ()
+    return tuple(bar.trade_date for bar in payload.bars)
+
+
+def _symbol_needs_fallback(
+    *,
+    payloads_by_provider: dict[str, ProviderHistoryPayload],
+    primary_provider: str,
+    secondary_provider: str | None,
+    as_of_date: date,
+    full_history: bool,
+) -> bool:
+    primary_dates = _payload_trade_dates(payloads_by_provider.get(primary_provider))
+    if not primary_dates:
+        return True
+
+    latest_primary_date = max(primary_dates)
+    if latest_primary_date < as_of_date - timedelta(days=7):
+        return True
+
+    if not full_history:
+        return False
+
+    minimum_primary_bars = 252
+    if len(primary_dates) >= minimum_primary_bars:
+        return False
+
+    if secondary_provider is None:
+        return True
+    secondary_dates = _payload_trade_dates(payloads_by_provider.get(secondary_provider))
+    return len(secondary_dates) < minimum_primary_bars
+
+
+def _write_daily_provider_coverage_report(
+    config: AppConfig,
+    *,
+    run_id: int,
+    as_of_date: date,
+    symbols: Sequence[str],
+    observations: Sequence[DailyBarRecord],
+    canonical_bars: Sequence[CanonicalBarRecord],
+    primary_provider: str,
+    secondary_provider: str | None,
+    research_fallback_providers: Sequence[str],
+) -> str:
+    observations_by_provider: dict[str, list[DailyBarRecord]] = defaultdict(list)
+    for observation in observations:
+        observations_by_provider[observation.provider].append(observation)
+
+    provider_summaries: dict[str, dict[str, object]] = {}
+    for provider_name, provider_observations in sorted(observations_by_provider.items()):
+        symbol_ranges: dict[str, dict[str, object]] = {}
+        by_symbol: dict[str, list[DailyBarRecord]] = defaultdict(list)
+        for observation in provider_observations:
+            by_symbol[observation.symbol].append(observation)
+        for symbol, rows in sorted(by_symbol.items()):
+            ordered_rows = sorted(rows, key=lambda row: row.trade_date)
+            symbol_ranges[symbol] = {
+                "bar_count": len(ordered_rows),
+                "start_date": ordered_rows[0].trade_date.isoformat(),
+                "end_date": ordered_rows[-1].trade_date.isoformat(),
+            }
+        provider_summaries[provider_name] = {
+            "symbol_count": len(symbol_ranges),
+            "bar_count": len(provider_observations),
+            "symbols": symbol_ranges,
+        }
+
+    canonical_by_symbol: dict[str, list[CanonicalBarRecord]] = defaultdict(list)
+    for bar in canonical_bars:
+        canonical_by_symbol[bar.symbol].append(bar)
+    validation_counts = dict(sorted(Counter(bar.validation_tier for bar in canonical_bars).items()))
+
+    coverage_payload = {
+        "run_id": run_id,
+        "as_of_date": as_of_date.isoformat(),
+        "primary_provider": primary_provider,
+        "secondary_provider": secondary_provider,
+        "research_fallback_providers": list(research_fallback_providers),
+        "requested_symbol_count": len(symbols),
+        "provider_summaries": provider_summaries,
+        "validation_counts": validation_counts,
+        "symbols_without_canonical_bars": sorted(
+            symbol for symbol in symbols if symbol not in canonical_by_symbol
+        ),
+        "symbols_without_primary_bars": sorted(
+            symbol
+            for symbol in symbols
+            if symbol
+            not in {
+                observation.symbol
+                for observation in observations_by_provider.get(primary_provider, [])
+            }
+        ),
+        "symbols_with_fallback_only_bars": sorted(
+            symbol
+            for symbol in symbols
+            if symbol
+            not in {
+                observation.symbol
+                for observation in observations_by_provider.get(primary_provider, [])
+            }
+            and any(
+                symbol
+                in {
+                    observation.symbol
+                    for observation in observations_by_provider.get(provider_name, [])
+                }
+                for provider_name in research_fallback_providers
+            )
+        ),
+    }
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    artifact_path = (
+        config.report_artifacts_dir / f"daily-provider-coverage-{run_id}-{timestamp}.json"
+    )
+    artifact_path.write_text(
+        json.dumps(coverage_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return str(artifact_path.relative_to(config.app_home))
+
+
 def backfill_market_data(
     config: AppConfig,
     *,
@@ -510,6 +658,7 @@ def backfill_market_data(
     fundamentals_provider: FundamentalsProvider | None = None,
     primary_provider: str | None = None,
     secondary_provider: str | None = None,
+    research_fallback_providers: Sequence[str] | None = None,
 ) -> BackfillSummary:
     selected_symbols = (
         _normalize_symbols(symbols)
@@ -522,13 +671,20 @@ def backfill_market_data(
         lookback_days=lookback_days,
         full_history=full_history,
     )
-    selected_providers, primary_name, secondary_name = _resolve_provider_list(
+    (
+        selected_providers,
+        primary_name,
+        secondary_name,
+        resolved_fallback_names,
+    ) = _resolve_provider_list(
         config,
         providers=providers,
         primary_provider=primary_provider,
         secondary_provider=secondary_provider,
+        research_fallback_providers=research_fallback_providers,
     )
     provider_names = tuple(provider.name for provider in selected_providers)
+    provider_map = {provider.name: provider for provider in selected_providers}
     resolved_fundamentals_provider = (
         fundamentals_provider
         if fundamentals_provider is not None
@@ -556,8 +712,13 @@ def backfill_market_data(
             payload_count = 0
             observation_count = 0
             fetch_errors: list[str] = []
+            core_provider_names = (
+                (primary_name,) if secondary_name is None else (primary_name, secondary_name)
+            )
             for symbol in selected_symbols:
-                for provider in selected_providers:
+                symbol_payloads: dict[str, ProviderHistoryPayload] = {}
+                for provider_name in core_provider_names:
+                    provider = provider_map[provider_name]
                     try:
                         payload = provider.fetch_daily_history(
                             symbol,
@@ -573,9 +734,39 @@ def backfill_market_data(
                         )
                         continue
 
+                    symbol_payloads[provider.name] = payload
                     payload_count += 1
                     observation_count += _store_payload(session, config, payload)[1]
                     session.commit()
+
+                if _symbol_needs_fallback(
+                    payloads_by_provider=symbol_payloads,
+                    primary_provider=primary_name,
+                    secondary_provider=secondary_name,
+                    as_of_date=effective_as_of_date,
+                    full_history=full_history,
+                ):
+                    for provider_name in resolved_fallback_names:
+                        provider = provider_map[provider_name]
+                        try:
+                            payload = provider.fetch_daily_history(
+                                symbol,
+                                start_date,
+                                effective_as_of_date,
+                            )
+                        except ProviderError as exc:
+                            fetch_errors.append(f"{provider.name}:{symbol}:{exc}")
+                            record_audit_event(
+                                config,
+                                "market-data",
+                                f"provider fetch failed for {provider.name} {symbol}: {exc}",
+                            )
+                            continue
+
+                        symbol_payloads[provider.name] = payload
+                        payload_count += 1
+                        observation_count += _store_payload(session, config, payload)[1]
+                        session.commit()
 
             fundamentals_payload_count, fundamentals_observation_count, fundamentals_errors = (
                 backfill_fundamentals(
@@ -607,6 +798,17 @@ def backfill_market_data(
                 end_date=effective_as_of_date,
                 canonical_bars=canonical_bars,
                 incidents=incidents,
+            )
+            coverage_report_path = _write_daily_provider_coverage_report(
+                config,
+                run_id=run_id,
+                as_of_date=effective_as_of_date,
+                symbols=selected_symbols,
+                observations=observations,
+                canonical_bars=canonical_bars,
+                primary_provider=primary_name,
+                secondary_provider=secondary_name,
+                research_fallback_providers=resolved_fallback_names,
             )
 
             if historical_snapshots:
@@ -641,6 +843,7 @@ def backfill_market_data(
                 "canonical_count": len(canonical_bars),
                 "incident_count": len(incidents),
                 "providers_used": provider_names,
+                "research_fallback_providers": resolved_fallback_names,
                 "fundamentals_provider": (
                     resolved_fundamentals_provider.name
                     if resolved_fundamentals_provider is not None
@@ -652,6 +855,7 @@ def backfill_market_data(
                 "full_history": full_history,
                 "historical_snapshots": historical_snapshots,
                 "historical_snapshot_count": len(snapshot_ids),
+                "coverage_report_path": coverage_report_path,
                 "snapshot_effective_dates": [
                     snapshot_record.effective_date.isoformat()
                     for snapshot_record in snapshot_records
@@ -673,6 +877,7 @@ def backfill_market_data(
                 requested_symbols=selected_symbols,
                 primary_provider=primary_name,
                 secondary_provider=secondary_name,
+                research_fallback_providers=resolved_fallback_names,
                 payload_count=payload_count,
                 observation_count=observation_count,
                 fundamentals_payload_count=fundamentals_payload_count,
@@ -684,6 +889,7 @@ def backfill_market_data(
                 providers_used=provider_names,
                 domain="daily",
                 frequency="daily",
+                coverage_report_path=coverage_report_path,
                 full_history=full_history,
                 historical_snapshots=historical_snapshots,
                 historical_snapshot_count=len(snapshot_ids),

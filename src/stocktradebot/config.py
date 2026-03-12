@@ -11,6 +11,7 @@ DEFAULT_PORT = 8000
 CONFIG_FILENAME = "config.json"
 DEFAULT_STOOQ_BASE_URL = "https://stooq.com"
 DEFAULT_ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co"
+DEFAULT_YAHOO_BASE_URL = "https://query1.finance.yahoo.com"
 DEFAULT_SEC_COMPANY_FACTS_BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
 DEFAULT_SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 DEFAULT_IBKR_GATEWAY_BASE_URL = "https://127.0.0.1:5000/v1/api"
@@ -136,13 +137,24 @@ def default_alpha_vantage_provider() -> ProviderConfig:
     )
 
 
+def default_yahoo_provider() -> ProviderConfig:
+    return ProviderConfig(
+        enabled=True,
+        priority=3,
+        base_url=DEFAULT_YAHOO_BASE_URL,
+        timeout_seconds=20.0,
+    )
+
+
 @dataclass(slots=True)
 class DataProvidersConfig:
     primary_provider: str = "stooq"
     secondary_provider: str | None = None
+    research_fallback_providers: list[str] = field(default_factory=lambda: ["yahoo"])
     validation: ValidationThresholds = field(default_factory=ValidationThresholds)
     stooq: ProviderConfig = field(default_factory=default_stooq_provider)
     alpha_vantage: ProviderConfig = field(default_factory=default_alpha_vantage_provider)
+    yahoo: ProviderConfig = field(default_factory=default_yahoo_provider)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None = None) -> DataProvidersConfig:
@@ -154,27 +166,38 @@ class DataProvidersConfig:
         return cls(
             primary_provider=str(data.get("primary_provider", defaults.primary_provider)),
             secondary_provider=None if secondary_provider is None else str(secondary_provider),
+            research_fallback_providers=[
+                str(provider_name)
+                for provider_name in data.get(
+                    "research_fallback_providers",
+                    defaults.research_fallback_providers,
+                )
+            ],
             validation=ValidationThresholds.from_dict(data.get("validation")),
             stooq=ProviderConfig.from_dict(data.get("stooq"), defaults=defaults.stooq),
             alpha_vantage=ProviderConfig.from_dict(
                 data.get("alpha_vantage"),
                 defaults=defaults.alpha_vantage,
             ),
+            yahoo=ProviderConfig.from_dict(data.get("yahoo"), defaults=defaults.yahoo),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "primary_provider": self.primary_provider,
             "secondary_provider": self.secondary_provider,
+            "research_fallback_providers": self.research_fallback_providers,
             "validation": self.validation.to_dict(),
             "stooq": self.stooq.to_dict(),
             "alpha_vantage": self.alpha_vantage.to_dict(),
+            "yahoo": self.yahoo.to_dict(),
         }
 
     def provider_map(self) -> dict[str, ProviderConfig]:
         return {
             "stooq": self.stooq,
             "alpha_vantage": self.alpha_vantage,
+            "yahoo": self.yahoo,
         }
 
 

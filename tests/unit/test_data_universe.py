@@ -8,6 +8,8 @@ from stocktradebot.data.universe import (
     build_historical_universe_snapshots,
     build_universe_snapshot,
     historical_universe_refresh_dates,
+    resolve_stock_candidates,
+    resolve_symbol_sectors,
 )
 
 
@@ -351,3 +353,14 @@ def test_build_historical_universe_snapshots_appends_current_as_of_date(tmp_path
         date(2026, 3, 2),
         date(2026, 3, 11),
     ]
+
+
+def test_default_bundled_universe_contains_300_stocks_with_sector_coverage(tmp_path) -> None:
+    config = AppConfig.default(tmp_path / "app-home")
+
+    candidates = resolve_stock_candidates(config)
+    sectors = resolve_symbol_sectors(config)
+
+    assert len(candidates) == 300
+    assert len(set(candidates)) == 300
+    assert all(symbol in sectors for symbol in candidates)

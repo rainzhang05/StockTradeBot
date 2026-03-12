@@ -29,6 +29,7 @@ class FakeProvider:
         self.name = name
         self.bars_by_symbol = bars_by_symbol
         self.actions_by_symbol = actions_by_symbol or {}
+        self.fetch_calls: list[str] = []
 
     def fetch_daily_history(
         self,
@@ -36,6 +37,7 @@ class FakeProvider:
         start_date: date,
         end_date: date,
     ) -> ProviderHistoryPayload:
+        self.fetch_calls.append(symbol)
         bars = tuple(
             bar
             for bar in self.bars_by_symbol.get(symbol, ())
@@ -146,6 +148,8 @@ def test_backfill_market_data_persists_payloads_and_universe(isolated_app_home: 
     assert summary.validation_counts == {"provisional": 2, "quarantined": 2, "verified": 4}
     assert summary.incident_count == 2
     assert summary.universe_snapshot_id is not None
+    assert summary.coverage_report_path is not None
+    assert (config.app_home / summary.coverage_report_path).exists()
     raw_payload_files = list(config.raw_payload_dir.glob("*/*/*/*"))
     assert len(raw_payload_files) == 8
 
@@ -299,6 +303,8 @@ def test_backfill_market_data_full_history_persists_historical_snapshots(
     assert summary.full_history is True
     assert summary.historical_snapshots is True
     assert summary.historical_snapshot_count == 3
+    assert summary.coverage_report_path is not None
+    assert (config.app_home / summary.coverage_report_path).exists()
 
     engine = create_db_engine(config)
     try:
@@ -314,3 +320,51 @@ def test_backfill_market_data_full_history_persists_historical_snapshots(
         date(2026, 2, 2),
         date(2026, 3, 2),
     ]
+
+
+def test_backfill_market_data_uses_research_fallback_provider_for_missing_primary_coverage(
+    isolated_app_home: Path,
+) -> None:
+    config = initialize_config(isolated_app_home)
+    config.universe.stock_candidates = ["AAPL", "MSFT"]
+    config.universe.curated_etfs = ["SPY"]
+    config.universe.min_history_days = 2
+    config.universe.liquidity_lookback_days = 2
+    config.universe.max_stocks = 2
+    config.data_providers.research_fallback_providers = ["yahoo"]
+    config.save()
+    initialize_database(config)
+
+    primary = FakeProvider(
+        "stooq",
+        bars_by_symbol={
+            "AAPL": _bars("stooq", "AAPL", 100.0, 101.0),
+            "SPY": _bars("stooq", "SPY", 500.0, 501.0),
+        },
+    )
+    fallback = FakeProvider(
+        "yahoo",
+        bars_by_symbol={
+            "MSFT": _bars("yahoo", "MSFT", 200.0, 201.0),
+            "SPY": _bars("yahoo", "SPY", 500.0, 501.0),
+        },
+    )
+
+    summary = backfill_market_data(
+        config,
+        as_of_date=date(2026, 3, 6),
+        lookback_days=5,
+        symbols=["AAPL", "MSFT", "SPY"],
+        providers=[primary, fallback],
+        primary_provider="stooq",
+        secondary_provider=None,
+        research_fallback_providers=["yahoo"],
+    )
+
+    assert "MSFT" in fallback.fetch_calls
+    assert summary.research_fallback_providers == ("yahoo",)
+    assert summary.validation_counts["provisional"] >= 1
+    status = market_data_status(config)
+    latest_run_summary = status["latest_run"]["summary"]
+    assert latest_run_summary["research_fallback_providers"] == ["yahoo"]
+    assert latest_run_summary["coverage_report_path"] is not None
