@@ -18,6 +18,8 @@ pipx ensurepath
 pipx install stocktradebot
 ```
 
+Published releases are shipped to PyPI by [publish-pypi.yml](/Users/rainzhang/StockTradeBot/.github/workflows/publish-pypi.yml). If you are preparing the first release, configure the PyPI Trusted Publisher described in [release-process.md](/Users/rainzhang/StockTradeBot/docs/release-process.md) before expecting `pipx install stocktradebot` to resolve from PyPI.
+
 Open the app from anywhere in your terminal with:
 
 ```bash

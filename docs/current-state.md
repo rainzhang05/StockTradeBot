@@ -8,7 +8,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - Branch: `main`
 - Repository state: Phase 9 intraday research expansion plus daily research recovery, full-history daily backfills, and multi-year walk-forward profit optimization implemented
 - Application code: package, CLI, API, runtime, storage, operator frontend, packaged frontend asset serving, structured operational logging, daily and intraday market-data pipelines, fundamentals ingestion, daily and intraday dataset generation, model training, daily and intraday walk-forward validation, backtesting, portfolio construction, risk freezes, simulation execution, broker integration, paper execution, live-manual approvals, live-autonomous gating, config mutation APIs, mode-control APIs, and operator workspace aggregation created
-- CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, and package verification
+- CI/workflows: GitHub Actions are split into focused workflow files for backend quality, backend tests, frontend unit/build checks, frontend browser E2E, package verification, and dedicated PyPI publication
 - Tests: backend and frontend verification suites created through Phase 9
 - Database schema: Phase 9 SQLite schema and Alembic migrations created
 - Frontend: React/Vite operator UI created under `frontend/`, served by the Python runtime when built, and now presented as a simplified four-view operator surface
@@ -54,6 +54,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - packaged the built frontend into release artifacts and updated runtime asset discovery so installed builds serve the operator UI instead of the placeholder page
 - added structured JSONL operational logging, API exposure for recent logs, and a System-screen operational log feed
 - hardened package verification to build the frontend, build the wheel, install it in isolation, and smoke-test the installed runtime UI path
+- added a dedicated `.github/workflows/publish-pypi.yml` release workflow that builds the frontend, validates tag-to-version alignment, checks distributions with `twine`, reruns the installed-wheel smoke path, and publishes tagged releases to PyPI through GitHub OIDC Trusted Publishing
 - fixed editable-install metadata generation so backend workflows and fresh source installs no longer require `frontend/dist` to exist before `pip install -e ".[dev]"`
 - added operator guide, troubleshooting guidance, and an explicit release process for the local-first shipped workflow
 - added intraday frequency specifications, intraday research configuration, and storage metadata for per-frequency backfills, datasets, validations, model training runs, and backtests
@@ -109,7 +110,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 | IBKR integration | Complete for Phase 6 | IBKR Client Portal client, paper/live adapters, broker-state sync, manual approvals, and autonomous gating are implemented |
 | Frontend/UI | Complete for Phase 9 | The operator experience is now consolidated into `Overview`, `Stocks`, `Activity`, and `Setup`; live approval UX, mode controls, strategy-profile readiness cards, and packaged frontend serving remain implemented while the default surface hides raw backend payloads, uses a more polished production-style visual system, and focuses on non-technical operator decisions |
 | Tests/coverage | Complete for Phase 9 | Backend pytest coverage is enforced at `>= 80%`; frontend tests run with Vitest and browser E2E; package smoke verification now tests installed runtime serving plus installed `status` and `--check-only` command flows; intraday research paths are covered by unit and integration tests |
-| GitHub Actions | Complete for Phase 9 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, and package build plus installed-wheel smoke verification for the current intraday-capable codebase, including direct installed-command runtime checks |
+| GitHub Actions | Complete for Phase 9 | Focused workflows cover backend quality, backend tests, frontend checks, frontend E2E, package build plus installed-wheel smoke verification, and dedicated PyPI publication for the current intraday-capable codebase |
 
 ## Active Constraints
 
@@ -140,6 +141,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 - the exhaustive staged optimizer grid is implemented in code, but on the rebuilt 300-name full-history runtime a single full experiment currently takes roughly six minutes, so a true 222-run grid would take on the order of twenty-two hours; the measured live production selection therefore comes from a targeted staged shortlist around the implemented objective
 - the explicit `stocktradebot backtest` command still replays the selected trained model through the shared execution-path backtester, while the canonical multi-year research profitability metric now lives in the persisted training-time walk-forward validation backtest artifact
 - only the `growth` strategy profile is currently defined; `conservative`, `balanced`, and `aggressive` remain empty placeholders until later strategy work fills them in
+- the repository is now PyPI publish-ready, but the maintainer still needs to register the PyPI Trusted Publisher and cut the first tagged release before `pipx install stocktradebot` resolves from the public index
 
 ## Next Milestone
 
@@ -154,11 +156,13 @@ This file describes the repository as it exists now. Update it at the end of eve
 - coverage check: passed locally at `81.03%`
 - frontend checks: `make frontend-check` passed locally
 - frontend browser E2E: `make frontend-e2e` passed locally after updating the operator mock workspace for the new strategy-profile UI
-- package build: `make package-check` passed locally during merge preparation and again as part of `make check`
+- package build: `make package-check` passed locally again after adding the PyPI publish workflow
+- package publish workflow parity: the new `.github/workflows/publish-pypi.yml` workflow mirrors the local `make package-check` build-and-smoke path and adds tag/version validation plus PyPI upload
+- workflow syntax validation: `.github/workflows/publish-pypi.yml` parsed successfully with Ruby's YAML loader
+- documentation path review: all relative Markdown links under `README.md` and `docs/` resolved locally after the PyPI release-doc updates
 - repository verification: `make check` passed locally during merge preparation with `85` tests passing
 - package smoke verification: local and CI package checks now build the frontend, install the built wheel in isolation, verify `init`, `doctor`, `status`, and `stocktradebot --check-only --no-browser`, and confirm the installed runtime serves the bundled UI
 - browser screenshot review: refreshed locally via the existing Playwright E2E lane at `output/playwright/clean-operator-ui.png`
-- documentation path review: confirmed the updated root README links resolve to `docs/README.md`, `docs/commands.md`, and `docs/assets/stocktradebot-ui-sample.png`
 - editable install smoke: passed locally from a fresh source copy with `frontend/dist` removed, using `python -m pip install -e ".[dev]"` under Python 3.14
 - GitHub workflow parity: `make check` passed locally and maps to the same intent as the split workflow files under `.github/workflows/`
 - backend-served browser smoke: passed locally against a built frontend runtime and confirmed the packaged UI rendered instead of the placeholder page
@@ -170,6 +174,7 @@ This file describes the repository as it exists now. Update it at the end of eve
 
 ## Last Updated Because
 
+- 2026-03-12: added a dedicated PyPI Trusted Publishing workflow, updated the release/install docs for the real tag-based publish path, and refreshed current state for the repository's PyPI-ready release posture
 - 2026-03-12: fast-forward merged the verified daily research, universe expansion, strategy-profile readiness, and repo-hygiene work into `main`, then refreshed this file so the repository snapshot reflects the merged branch
 - 2026-03-12: completed a repository-wide documentation consistency review against the live code and runtime, refreshed stale full-history snapshot counts, reran `make check`, and prepared the branch for merge
 - 2026-03-12: added four-slot strategy-profile readiness and repair workflows, classified the current winning strategy as the `growth` profile, exposed the new API and Overview UI surfaces, reran backend plus frontend verification, and refreshed the docs to match the new operator workflow
